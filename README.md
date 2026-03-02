@@ -1,2 +1,2 @@
-# S3TS
+# V2TTS
 Voice-over using TTS
