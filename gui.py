@@ -115,6 +115,7 @@ class AppGUI:
 
         self.log = tk.Text(status, height=20, wrap="word")
         self.log.pack(fill="both", expand=True, pady=(8, 0))
+        self.log.configure(state="disabled")
 
         self._toggle_tts_model_combo()
 
@@ -177,13 +178,17 @@ class AppGUI:
                 if kind == "status":
                     self.status_var.set(msg)
                 elif kind == "text":
-                    self.log.insert("end", f"STT: {msg}\n")
-                    self.log.see("end")
+                    self._append_log(f"STT: {msg}\n")
                 elif kind == "error":
-                    self.log.insert("end", f"ERROR: {msg}\n")
-                    self.log.see("end")
+                    self._append_log(f"ERROR: {msg}\n")
                     messagebox.showerror("Runtime error", msg)
         except queue.Empty:
             pass
 
         self.root.after(100, self._poll_ui_queue)
+
+    def _append_log(self, text: str) -> None:
+        self.log.configure(state="normal")
+        self.log.insert("end", text)
+        self.log.see("end")
+        self.log.configure(state="disabled")
