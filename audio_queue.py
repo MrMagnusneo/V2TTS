@@ -67,8 +67,8 @@ class SpeechLoopRunner:
                 device=self.config.stt_device,
                 compute_type=None,
                 language=None,
-                beam_size=5,
-                vad_filter=True,
+                beam_size=1,
+                vad_filter=False,
             )
 
             self.on_status("Listening...")

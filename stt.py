@@ -25,7 +25,14 @@ class WhisperTranscriber:
     ):
         if compute_type is None:
             compute_type = default_compute_type(device)
-        self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        try:
+            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        except Exception:
+            # Graceful CUDA fallback for packaged Windows builds without CUDA runtime.
+            if device == "cuda":
+                self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            else:
+                raise
         self.language = language
         self.beam_size = beam_size
         self.vad_filter = vad_filter

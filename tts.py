@@ -27,6 +27,10 @@ def _default_tts_root() -> Path:
     return _project_root() / "tts"
 
 
+def _exists_file(path: Path) -> bool:
+    return path.exists() and path.is_file()
+
+
 def resolve_tts_paths(tts_root: Optional[str] = None) -> TTSPaths:
     env_root = os.getenv("V2TTS_TTS_ROOT")
     root = Path(tts_root or env_root or _default_tts_root()).expanduser().resolve()
@@ -62,7 +66,7 @@ def choose_tts_engine(text: str, auto_select: bool = True, manual_model: str = "
         return "ru_tts"
     if has_lat:
         return "sam"
-    return "ru_tts"
+    return "sam"
 
 
 def tts_sam(text: str, out_wav: str, paths: TTSPaths):
@@ -108,8 +112,22 @@ def synthesize_text(
     engine = choose_tts_engine(text, auto_select=auto_select, manual_model=manual_model)
 
     if engine == "sam":
+        if not _exists_file(paths.sam_js):
+            raise FileNotFoundError(f"SAM JS file not found: {paths.sam_js}")
         tts_sam(text, out_wav, paths)
-    elif engine == "ru_tts":
-        tts_ru_tts(text, out_wav, paths)
-    else:
-        raise ValueError(f"Unknown TTS model: {engine}")
+        return
+
+    if engine == "ru_tts":
+        # On Windows one-file builds ru_tts is often unavailable; fallback to sam if possible.
+        if _exists_file(paths.ru_tts_bin):
+            tts_ru_tts(text, out_wav, paths)
+            return
+        if _exists_file(paths.sam_js):
+            tts_sam(text, out_wav, paths)
+            return
+        raise FileNotFoundError(
+            f"ru_tts binary not found: {paths.ru_tts_bin}. "
+            f"SAM fallback also unavailable: {paths.sam_js}"
+        )
+
+    raise ValueError(f"Unknown TTS model: {engine}")
