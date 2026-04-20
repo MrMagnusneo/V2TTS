@@ -58,7 +58,9 @@ class SpeechLoopRunner:
         try:
             sd = get_sounddevice()
             sf = get_soundfile()
-            stream_cfg = StreamConfig(sample_rate=16000, channels=1, device=self.config.input_device)
+            input_info = sd.query_devices(self.config.input_device, "input")
+            default_sr = int(round(float(input_info["default_samplerate"])))
+            stream_cfg = StreamConfig(sample_rate=default_sr, channels=1, device=self.config.input_device)
             phrase_stream = AudioPhraseStream(stream_cfg)
             transcriber = WhisperTranscriber(
                 model_size=self.config.stt_model_size,

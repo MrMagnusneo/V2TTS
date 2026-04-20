@@ -31,10 +31,9 @@ class WhisperTranscriber:
         self.vad_filter = vad_filter
 
     def transcribe_pcm16(self, pcm16: np.ndarray, sample_rate: int = 16000) -> str:
-        if sample_rate != 16000:
-            raise ValueError("WhisperTranscriber expects 16kHz audio.")
-
         audio = pcm16.astype(np.float32) / 32768.0
+        if sample_rate != 16000:
+            audio = self._resample_audio(audio, sample_rate, 16000)
         segments, _ = self.model.transcribe(
             audio,
             language=self.language,
@@ -43,3 +42,16 @@ class WhisperTranscriber:
             vad_filter=self.vad_filter,
         )
         return "".join(seg.text for seg in segments).strip()
+
+    @staticmethod
+    def _resample_audio(audio: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+        if src_rate <= 0 or dst_rate <= 0:
+            raise ValueError("Sample rates must be positive.")
+        if src_rate == dst_rate or len(audio) == 0:
+            return audio
+
+        src_len = len(audio)
+        dst_len = max(1, int(round(src_len * dst_rate / src_rate)))
+        src_x = np.linspace(0.0, 1.0, num=src_len, endpoint=False, dtype=np.float32)
+        dst_x = np.linspace(0.0, 1.0, num=dst_len, endpoint=False, dtype=np.float32)
+        return np.interp(dst_x, src_x, audio).astype(np.float32)
