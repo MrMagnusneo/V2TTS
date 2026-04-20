@@ -15,7 +15,7 @@ Desktop GUI application for real-time `speech -> text -> speech`.
 - Select STT model size: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Select audio input/output devices.
 - Auto TTS model selection by text language (Cyrillic -> `ru_tts`, Latin -> `sam`).
-- Manual TTS model override.
+- Manual TTS model override (`ru_tts`, `sam`, `system`).
 - Unified TTS root path for Linux/Windows.
 
 ### Project structure
@@ -28,6 +28,7 @@ Desktop GUI application for real-time `speech -> text -> speech`.
 - `audio_queue.py` - runtime loop (`STT -> TTS -> playback`).
 - `devices.py` - audio device discovery helpers.
 - `audio_backend.py` - lazy audio backend imports (`sounddevice`, `soundfile`).
+- `installer/` - Windows build scripts (`PyInstaller` + `Inno Setup`).
 
 ### Requirements
 
@@ -91,6 +92,28 @@ Environment overrides:
 python main.py
 ```
 
+### Windows build (onefile + installer)
+
+From PowerShell:
+
+```powershell
+cd installer
+.\build_windows.ps1
+```
+
+Result:
+- `dist\V2TTS.exe`
+
+To build installer:
+
+```powershell
+cd installer
+.\build_installer.ps1
+```
+
+Result:
+- `dist-installer\V2TTS-Setup.exe`
+
 ### Troubleshooting
 
 - `OSError: PortAudio library not found`:
@@ -99,6 +122,8 @@ python main.py
   ensure binary exists in `tts` root or set `V2TTS_RU_TTS_BIN`.
 - `sam` not found:
   ensure `samjs.min.js` exists or set `V2TTS_SAM_JS`.
+- `WinError 2` on TTS:
+  app now uses fallback chain (`ru_tts -> sam -> system`), check log for final error.
 
 ### Notes
 
@@ -122,7 +147,7 @@ python main.py
 - Выбор размера STT-модели: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Выбор устройств ввода/вывода аудио.
 - Автовыбор TTS-модели по языку текста (кириллица -> `ru_tts`, латиница -> `sam`).
-- Ручной выбор TTS-модели.
+- Ручной выбор TTS-модели (`ru_tts`, `sam`, `system`).
 - Единый кроссплатформенный путь к TTS-моделям (Linux/Windows).
 
 ### Структура проекта
@@ -135,6 +160,7 @@ python main.py
 - `audio_queue.py` - runtime-цикл (`STT -> TTS -> playback`).
 - `devices.py` - функции получения аудиоустройств.
 - `audio_backend.py` - ленивые импорты аудио-бэкенда (`sounddevice`, `soundfile`).
+- `installer/` - скрипты сборки Windows (`PyInstaller` + `Inno Setup`).
 
 ### Требования
 
@@ -198,6 +224,28 @@ python -m pip install --force-reinstall sounddevice
 python main.py
 ```
 
+### Сборка Windows (onefile + установщик)
+
+Из PowerShell:
+
+```powershell
+cd installer
+.\build_windows.ps1
+```
+
+Результат:
+- `dist\V2TTS.exe`
+
+Сборка установщика:
+
+```powershell
+cd installer
+.\build_installer.ps1
+```
+
+Результат:
+- `dist-installer\V2TTS-Setup.exe`
+
 ### Решение проблем
 
 - `OSError: PortAudio library not found`:
@@ -206,6 +254,8 @@ python main.py
   проверь, что бинарник есть в `tts` или задай `V2TTS_RU_TTS_BIN`.
 - Не найден `sam`:
   проверь, что `samjs.min.js` существует, или задай `V2TTS_SAM_JS`.
+- `WinError 2` при TTS:
+  приложение использует fallback-цепочку (`ru_tts -> sam -> system`), смотри финальную ошибку в логе.
 
 ### Примечания
 

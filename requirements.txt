@@ -2,3 +2,4 @@ faster-whisper
 numpy
 sounddevice
 soundfile
+pyttsx3

@@ -4,7 +4,7 @@ from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_input_devices, list_output_devices, parse_index_from_label
 from gui import AppGUI
 from stt import STT_DEVICES, STT_MODEL_SIZES
-from tts import TTS_MODELS, resolve_tts_paths
+from tts import TTS_MODELS, prepare_runtime_tts_root
 
 
 class AppController:
@@ -13,7 +13,7 @@ class AppController:
         self.input_map: dict[str, int] = {}
         self.output_map: dict[str, int] = {}
 
-        default_paths = resolve_tts_paths()
+        runtime_tts_root = prepare_runtime_tts_root()
 
         self.root = tk.Tk()
         self.gui = AppGUI(
@@ -21,7 +21,7 @@ class AppController:
             stt_devices=STT_DEVICES,
             stt_models=STT_MODEL_SIZES,
             tts_models=TTS_MODELS,
-            default_tts_root=str(default_paths.tts_root),
+            default_tts_root=str(runtime_tts_root),
             on_refresh_devices=self.refresh_devices,
             on_start=self.start,
             on_stop=self.stop,
