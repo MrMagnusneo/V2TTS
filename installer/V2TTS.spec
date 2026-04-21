@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, Tree
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -15,7 +15,14 @@ hiddenimports += collect_submodules("faster_whisper")
 binaries += collect_dynamic_libs("onnxruntime")
 
 # App TTS assets
-datas += Tree(str(ROOT / "tts"), prefix="tts")
+tts_root = ROOT / "tts"
+if tts_root.exists():
+    for file_path in tts_root.rglob("*"):
+        if not file_path.is_file():
+            continue
+        rel_parent = file_path.relative_to(tts_root).parent
+        dest_dir = (Path("tts") / rel_parent).as_posix()
+        datas.append((str(file_path), dest_dir))
 
 # pyttsx3 and backends
 datas += collect_data_files("pyttsx3")
