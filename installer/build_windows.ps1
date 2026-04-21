@@ -22,6 +22,10 @@ if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCOD
 & $Py -m pip install -r requirements.txt pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "dependency install failed with exit code $LASTEXITCODE" }
 
+# Prepare runtime files (node.exe, samjs, ru_tts.exe if present).
+& (Join-Path $InstallerDir "prepare_runtime.ps1")
+if ($LASTEXITCODE -ne 0) { throw "runtime preparation failed with exit code $LASTEXITCODE" }
+
 # Build onefile EXE from deterministic spec.
 & $Py -m PyInstaller --clean --noconfirm installer\\V2TTS.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed with exit code $LASTEXITCODE" }

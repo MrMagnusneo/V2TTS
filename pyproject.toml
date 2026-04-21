@@ -7,5 +7,4 @@ dependencies = [
   "numpy",
   "sounddevice",
   "soundfile",
-  "pyttsx3",
 ]

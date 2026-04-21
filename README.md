@@ -15,7 +15,7 @@ Desktop GUI application for real-time `speech -> text -> speech`.
 - Select STT model size: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Select audio input/output devices.
 - Auto TTS model selection by text language (Cyrillic -> `ru_tts`, Latin -> `sam`).
-- Manual TTS model override (`ru_tts`, `sam`, `system`).
+- Manual TTS model override (`ru_tts`, `sam`).
 - Unified TTS root path for Linux/Windows.
 
 ### Project structure
@@ -98,6 +98,7 @@ From PowerShell:
 
 ```powershell
 cd installer
+.\prepare_runtime.ps1
 .\build_windows.ps1
 ```
 
@@ -123,7 +124,7 @@ Result:
 - `sam` not found:
   ensure `samjs.min.js` exists or set `V2TTS_SAM_JS`.
 - `WinError 2` on TTS:
-  app now uses fallback chain (`ru_tts -> sam -> system`), check log for final error.
+  ensure runtime files exist: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, `runtime/tts/ru_tts/bin/ru_tts.exe`.
 
 ### Notes
 
@@ -147,7 +148,7 @@ Result:
 - Выбор размера STT-модели: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Выбор устройств ввода/вывода аудио.
 - Автовыбор TTS-модели по языку текста (кириллица -> `ru_tts`, латиница -> `sam`).
-- Ручной выбор TTS-модели (`ru_tts`, `sam`, `system`).
+- Ручной выбор TTS-модели (`ru_tts`, `sam`).
 - Единый кроссплатформенный путь к TTS-моделям (Linux/Windows).
 
 ### Структура проекта
@@ -230,6 +231,7 @@ python main.py
 
 ```powershell
 cd installer
+.\prepare_runtime.ps1
 .\build_windows.ps1
 ```
 
@@ -255,7 +257,7 @@ cd installer
 - Не найден `sam`:
   проверь, что `samjs.min.js` существует, или задай `V2TTS_SAM_JS`.
 - `WinError 2` при TTS:
-  приложение использует fallback-цепочку (`ru_tts -> sam -> system`), смотри финальную ошибку в логе.
+  проверь runtime-файлы: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, `runtime/tts/ru_tts/bin/ru_tts.exe`.
 
 ### Примечания
 

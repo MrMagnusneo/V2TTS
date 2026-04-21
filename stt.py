@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 
 import numpy as np
 from faster_whisper import WhisperModel
@@ -28,12 +29,28 @@ class WhisperTranscriber:
         self.requested_device = device
         self.actual_device = device
         self.compute_type = compute_type
+
+        model_kwargs = {
+            "device": device,
+            "compute_type": compute_type,
+            "num_workers": 1,
+        }
+        if device == "cpu":
+            # Use available cores to reduce latency on CPU mode.
+            model_kwargs["cpu_threads"] = max(1, os.cpu_count() or 1)
+
         try:
-            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+            self.model = WhisperModel(model_size, **model_kwargs)
         except Exception:
             # Graceful CUDA fallback for packaged Windows builds without CUDA runtime.
             if device == "cuda":
-                self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+                self.model = WhisperModel(
+                    model_size,
+                    device="cpu",
+                    compute_type="int8",
+                    num_workers=1,
+                    cpu_threads=max(1, os.cpu_count() or 1),
+                )
                 self.actual_device = "cpu"
                 self.compute_type = "int8"
             else:

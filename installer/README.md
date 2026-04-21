@@ -6,8 +6,11 @@ From PowerShell:
 
 ```powershell
 cd <project_root>\installer
+.\prepare_runtime.ps1
 .\build_windows.ps1
 ```
+
+`prepare_runtime.ps1` is strict and fails if required runtime files are missing.
 
 Result:
 - `..\dist\V2TTS.exe`
@@ -30,5 +33,5 @@ Result:
   - all `tts` assets,
   - `faster_whisper` data,
   - `onnxruntime` binaries,
-  - `pyttsx3` modules.
-- Runtime TTS assets are also copied to `%LOCALAPPDATA%\V2TTS\tts` when possible.
+  - `installer/runtime` assets (node.exe, ru_tts.exe, samjs).
+- Target machine should not require separate Node.js installation if `installer/runtime/node/node.exe` is present.

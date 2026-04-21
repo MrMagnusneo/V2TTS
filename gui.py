@@ -27,7 +27,7 @@ class AppGUI:
         self.ui_queue: "queue.Queue[tuple[str, str]]" = queue.Queue()
 
         self.stt_device_var = tk.StringVar(value="cpu")
-        self.stt_model_var = tk.StringVar(value="medium")
+        self.stt_model_var = tk.StringVar(value="base")
         self.input_device_var = tk.StringVar(value="")
         self.output_device_var = tk.StringVar(value="")
         self.auto_tts_var = tk.BooleanVar(value=True)

@@ -58,17 +58,22 @@ class SpeechLoopRunner:
         try:
             sd = get_sounddevice()
             sf = get_soundfile()
-            input_info = sd.query_devices(self.config.input_device, "input")
-            raw_sr = float(input_info.get("default_samplerate") or 16000.0)
-            default_sr = int(round(raw_sr)) if raw_sr > 0 else 16000
-            stream_cfg = StreamConfig(sample_rate=default_sr, channels=1, device=self.config.input_device)
+            default_sr = self._select_input_sample_rate(sd, self.config.input_device)
+            stream_cfg = StreamConfig(
+                sample_rate=default_sr,
+                channels=1,
+                frame_ms=20,
+                min_phrase_ms=180,
+                max_silence_ms=350,
+                device=self.config.input_device,
+            )
             phrase_stream = AudioPhraseStream(stream_cfg)
             transcriber = WhisperTranscriber(
                 model_size=self.config.stt_model_size,
                 device=self.config.stt_device,
                 compute_type=None,
                 language=None,
-                beam_size=1,
+                beam_size=2,
                 vad_filter=False,
             )
 
@@ -113,3 +118,22 @@ class SpeechLoopRunner:
         except Exception as exc:
             self.on_error(str(exc))
             self.on_status("Stopped (error)")
+
+    @staticmethod
+    def _select_input_sample_rate(sd, device_index: Optional[int]) -> int:
+        preferred_rates = [16000, 32000, 44100, 48000]
+        for sr in preferred_rates:
+            try:
+                sd.check_input_settings(
+                    device=device_index,
+                    channels=1,
+                    samplerate=sr,
+                    dtype="float32",
+                )
+                return sr
+            except Exception:
+                continue
+
+        info = sd.query_devices(device_index, "input")
+        raw_sr = float(info.get("default_samplerate") or 16000.0)
+        return int(round(raw_sr)) if raw_sr > 0 else 16000

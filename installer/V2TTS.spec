@@ -26,9 +26,15 @@ if tts_root.exists():
         dest_dir = (Path("tts") / rel_parent).as_posix()
         datas.append((str(file_path), dest_dir))
 
-# pyttsx3 and backends
-datas += collect_data_files("pyttsx3")
-hiddenimports += collect_submodules("pyttsx3")
+# Installer runtime assets (node.exe, prebuilt ru_tts.exe, samjs)
+runtime_root = ROOT / "installer" / "runtime"
+if runtime_root.exists():
+    for file_path in runtime_root.rglob("*"):
+        if not file_path.is_file():
+            continue
+        rel_parent = file_path.relative_to(runtime_root).parent
+        dest_dir = (Path("runtime") / rel_parent).as_posix()
+        datas.append((str(file_path), dest_dir))
 
 
 a = Analysis(
