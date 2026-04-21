@@ -3,7 +3,9 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
-ROOT = Path(__file__).resolve().parent.parent
+# In PyInstaller spec context `__file__` may be undefined.
+# `SPECPATH` points to the directory containing this spec file.
+ROOT = Path(globals().get("SPECPATH", ".")).resolve().parent
 
 binaries = []
 datas = []
