@@ -98,12 +98,15 @@ From PowerShell:
 
 ```powershell
 cd installer
-.\prepare_runtime.ps1
 .\build_windows.ps1
 ```
 
 Result:
 - `dist\V2TTS.exe`
+
+`build_windows.ps1` automatically downloads missing `sam` and `ru_tts` sources and prepares runtime assets.
+If local `ru_tts.exe` is not found, it tries to build it from source.
+If compiler is unavailable, you can set `V2TTS_RU_TTS_EXE_URL` to a direct link to prebuilt `ru_tts.exe`.
 
 To build installer:
 
@@ -231,12 +234,15 @@ python main.py
 
 ```powershell
 cd installer
-.\prepare_runtime.ps1
 .\build_windows.ps1
 ```
 
 Результат:
 - `dist\V2TTS.exe`
+
+`build_windows.ps1` автоматически скачивает недостающие исходники `sam` и `ru_tts` и готовит runtime-ассеты.
+Если локальный `ru_tts.exe` не найден, скрипт попытается собрать его из исходников.
+Если компилятора нет, можно задать `V2TTS_RU_TTS_EXE_URL` (прямая ссылка на готовый `ru_tts.exe`).
 
 Сборка установщика:
 

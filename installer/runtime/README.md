@@ -15,7 +15,7 @@ cd installer
 .\prepare_runtime.ps1
 ```
 
-Then build with:
+Or run the full build (recommended), it calls preparation automatically:
 
 ```powershell
 .\build_windows.ps1

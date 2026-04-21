@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCOD
 & $Py -m pip install -r requirements.txt pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "dependency install failed with exit code $LASTEXITCODE" }
 
-# Prepare runtime files (node.exe, samjs, ru_tts.exe if present).
+# Prepare runtime files (auto-download TTS sources, then stage node.exe/samjs/ru_tts.exe).
 & (Join-Path $InstallerDir "prepare_runtime.ps1")
 if ($LASTEXITCODE -ne 0) { throw "runtime preparation failed with exit code $LASTEXITCODE" }
 
