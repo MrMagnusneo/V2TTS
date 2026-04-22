@@ -105,8 +105,14 @@ Result:
 - `dist\V2TTS.exe`
 
 `build_windows.ps1` automatically downloads missing `sam` and `ru_tts` sources and prepares runtime assets.
-If local `ru_tts.exe` is not found, it tries to build it from source.
-If compiler is unavailable, you can set `V2TTS_RU_TTS_EXE_URL` to a direct link to prebuilt `ru_tts.exe`.
+If local `ru_tts` runtime is not found, it tries prebuilt package download first (`ru_tts.exe` or `ru_tts.dll` + `rulex.dll`), and only then falls back to source build.
+Node runtime is also auto-staged (`node.exe` from local PATH or official Node.js ZIP download).
+Optional overrides:
+- `V2TTS_RU_TTS_EXE_URL`
+- `V2TTS_RU_TTS_PACKAGE_URL`
+- `V2TTS_NODE_EXE_URL`
+- `V2TTS_NODE_ZIP_URL`
+- `V2TTS_NODE_VERSION` (single version or comma-separated list)
 
 To build installer:
 
@@ -114,6 +120,9 @@ To build installer:
 cd installer
 .\build_installer.ps1
 ```
+
+If Inno Setup is installed in a custom location, set `V2TTS_ISCC_PATH` to the full `ISCC.exe` path.
+If Inno Setup is missing, `build_installer.ps1` tries to install a local compiler copy into `<project>\.tools\InnoSetup6`.
 
 Result:
 - `dist-installer\V2TTS-Setup.exe`
@@ -127,7 +136,7 @@ Result:
 - `sam` not found:
   ensure `samjs.min.js` exists or set `V2TTS_SAM_JS`.
 - `WinError 2` on TTS:
-  ensure runtime files exist: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, `runtime/tts/ru_tts/bin/ru_tts.exe`.
+  ensure runtime files exist: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, and either `runtime/tts/ru_tts/bin/ru_tts.exe` or `runtime/tts/ru_tts/bin/ru_tts.dll` (+ `rulex.dll`).
 
 ### Notes
 
@@ -241,8 +250,14 @@ cd installer
 - `dist\V2TTS.exe`
 
 `build_windows.ps1` автоматически скачивает недостающие исходники `sam` и `ru_tts` и готовит runtime-ассеты.
-Если локальный `ru_tts.exe` не найден, скрипт попытается собрать его из исходников.
-Если компилятора нет, можно задать `V2TTS_RU_TTS_EXE_URL` (прямая ссылка на готовый `ru_tts.exe`).
+Если локальный runtime `ru_tts` не найден, скрипт сначала пробует скачать готовый пакет (`ru_tts.exe` или `ru_tts.dll` + `rulex.dll`), и только потом переходит к сборке из исходников.
+Runtime для Node тоже подготавливается автоматически (`node.exe` из PATH или из официального ZIP Node.js).
+Опциональные переменные:
+- `V2TTS_RU_TTS_EXE_URL`
+- `V2TTS_RU_TTS_PACKAGE_URL`
+- `V2TTS_NODE_EXE_URL`
+- `V2TTS_NODE_ZIP_URL`
+- `V2TTS_NODE_VERSION` (одна версия или список через запятую)
 
 Сборка установщика:
 
@@ -250,6 +265,9 @@ cd installer
 cd installer
 .\build_installer.ps1
 ```
+
+Если Inno Setup установлен в нестандартную директорию, задай `V2TTS_ISCC_PATH` (полный путь к `ISCC.exe`).
+Если Inno Setup не установлен, `build_installer.ps1` попробует поставить локальную копию компилятора в `<project>\.tools\InnoSetup6`.
 
 Результат:
 - `dist-installer\V2TTS-Setup.exe`
@@ -263,7 +281,7 @@ cd installer
 - Не найден `sam`:
   проверь, что `samjs.min.js` существует, или задай `V2TTS_SAM_JS`.
 - `WinError 2` при TTS:
-  проверь runtime-файлы: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, `runtime/tts/ru_tts/bin/ru_tts.exe`.
+  проверь runtime-файлы: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, и либо `runtime/tts/ru_tts/bin/ru_tts.exe`, либо `runtime/tts/ru_tts/bin/ru_tts.dll` (+ `rulex.dll`).
 
 ### Примечания
 

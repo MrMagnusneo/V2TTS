@@ -1,0 +1,14 @@
+.venv/
+.tools/
+__pycache__/
+*.pyc
+
+build/
+dist/
+dist-installer/
+
+installer/runtime/node/node.exe
+installer/runtime/tts/sam/dist/samjs.min.js
+installer/runtime/tts/ru_tts/bin/ru_tts.exe
+installer/runtime/tts/ru_tts/bin/ru_tts.dll
+installer/runtime/tts/ru_tts/bin/rulex.dll

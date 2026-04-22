@@ -6,7 +6,9 @@ Required files:
 
 - `runtime/node/node.exe`
 - `runtime/tts/sam/dist/samjs.min.js`
-- `runtime/tts/ru_tts/bin/ru_tts.exe`
+- one of:
+  - `runtime/tts/ru_tts/bin/ru_tts.exe`
+  - `runtime/tts/ru_tts/bin/ru_tts.dll` (+ `runtime/tts/ru_tts/bin/rulex.dll`)
 
 Use:
 

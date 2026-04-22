@@ -26,7 +26,7 @@ if tts_root.exists():
         dest_dir = (Path("tts") / rel_parent).as_posix()
         datas.append((str(file_path), dest_dir))
 
-# Installer runtime assets (node.exe, prebuilt ru_tts.exe, samjs)
+# Installer runtime assets (node.exe, ru_tts runtime, samjs)
 runtime_root = ROOT / "installer" / "runtime"
 if runtime_root.exists():
     for file_path in runtime_root.rglob("*"):
