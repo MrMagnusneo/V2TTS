@@ -27,7 +27,6 @@ Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Ad
 [Files]
 Source: "..\dist\V2TTS.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\installer\runtime\*"; DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
@@ -6,47 +7,74 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 # In PyInstaller spec context `__file__` may be undefined.
 # `SPECPATH` points to the directory containing this spec file.
 ROOT = Path(globals().get("SPECPATH", ".")).resolve().parent
+SAM_ROOT = ROOT / "tts" / "sam-python"
+RU_TTS_ROOT = ROOT / "tts" / "ru_tts-python"
+
+for package_root in (SAM_ROOT, RU_TTS_ROOT):
+    sys.path.insert(0, str(package_root))
 
 binaries = []
 datas = []
-hiddenimports = []
+hiddenimports = [
+    "faster_whisper",
+    "faster_whisper.audio",
+    "faster_whisper.feature_extractor",
+    "faster_whisper.tokenizer",
+    "faster_whisper.transcribe",
+    "faster_whisper.utils",
+    "faster_whisper.vad",
+    "faster_whisper.version",
+]
+excluded_modules = [
+    "black",
+    "boto3",
+    "botocore",
+    "cv2",
+    "IPython",
+    "jedi",
+    "keras",
+    "lxml",
+    "matplotlib",
+    "notebook",
+    "pandas",
+    "PIL",
+    "pyarrow",
+    "pytest",
+    "scipy",
+    "sklearn",
+    "tensorflow",
+    "torch",
+    "torchaudio",
+    "torchvision",
+    "triton",
+]
 
 # Whisper runtime assets (including silero_vad_v6.onnx)
 datas += collect_data_files("faster_whisper")
-hiddenimports += collect_submodules("faster_whisper")
 binaries += collect_dynamic_libs("onnxruntime")
 
-# App TTS assets
-tts_root = ROOT / "tts"
-if tts_root.exists():
-    for file_path in tts_root.rglob("*"):
-        if not file_path.is_file():
-            continue
-        rel_parent = file_path.relative_to(tts_root).parent
-        dest_dir = (Path("tts") / rel_parent).as_posix()
-        datas.append((str(file_path), dest_dir))
+# Vendored Python TTS engines.
+hiddenimports += collect_submodules("sam_python")
+hiddenimports += collect_submodules("ru_tts_python")
 
-# Installer runtime assets (node.exe, ru_tts runtime, samjs)
-runtime_root = ROOT / "installer" / "runtime"
-if runtime_root.exists():
-    for file_path in runtime_root.rglob("*"):
-        if not file_path.is_file():
-            continue
-        rel_parent = file_path.relative_to(runtime_root).parent
-        dest_dir = (Path("runtime") / rel_parent).as_posix()
-        datas.append((str(file_path), dest_dir))
+# Native ru_tts backend is built by installer/build.py before PyInstaller.
+ru_tts_bin = RU_TTS_ROOT / "bin"
+if ru_tts_bin.exists():
+    for file_path in ru_tts_bin.iterdir():
+        if file_path.is_file():
+            binaries.append((str(file_path), "bin"))
 
 
 a = Analysis(
     [str(ROOT / "main.py")],
-    pathex=[str(ROOT)],
+    pathex=[str(ROOT), str(SAM_ROOT), str(RU_TTS_ROOT)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excluded_modules,
     noarchive=False,
     optimize=0,
 )

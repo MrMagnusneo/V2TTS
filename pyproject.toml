@@ -8,3 +8,8 @@ dependencies = [
   "sounddevice",
   "soundfile",
 ]
+
+[project.optional-dependencies]
+build = [
+  "pyinstaller",
+]

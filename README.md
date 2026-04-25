@@ -2,89 +2,84 @@
 
 ## EN
 
-Desktop GUI application for real-time `speech -> text -> speech`.
+Desktop GUI app for a real-time `speech -> text -> speech` loop.
 
 - STT: `faster-whisper`
-- TTS: `ru_tts` (Russian) and `sam` (English)
+- TTS: vendored Python `ru_tts` for Russian and vendored Python `sam` for English
 - GUI: `tkinter`
+- Packaging: one cross-platform Python build script
 
 ### Features
 
-- Start/stop loop from GUI (no CLI arguments required).
+- Start/stop from GUI, no command-line arguments required.
 - Select STT device: `cpu` or `cuda`.
 - Select STT model size: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Select audio input/output devices.
-- Auto TTS model selection by text language (Cyrillic -> `ru_tts`, Latin -> `sam`).
-- Manual TTS model override (`ru_tts`, `sam`).
-- Unified TTS root path for Linux/Windows.
+- Auto TTS model selection by text language: Cyrillic -> `ru_tts`, Latin -> `sam`.
+- Manual TTS model override: `ru_tts` or `sam`.
 
-### Project structure
+### Project Structure
 
 - `main.py` - app entry point and controller wiring.
-- `gui.py` - GUI only (widgets/events).
+- `gui.py` - GUI widgets and UI events.
 - `audio_stream.py` - microphone stream and phrase segmentation.
+- `audio_queue.py` - runtime loop: `STT -> TTS -> playback`.
 - `stt.py` - Whisper transcription logic.
-- `tts.py` - TTS routing and path resolution.
-- `audio_queue.py` - runtime loop (`STT -> TTS -> playback`).
+- `tts.py` - TTS routing through the vendored Python engines.
 - `devices.py` - audio device discovery helpers.
-- `audio_backend.py` - lazy audio backend imports (`sounddevice`, `soundfile`).
-- `installer/` - Windows build scripts (`PyInstaller` + `Inno Setup`).
+- `audio_backend.py` - lazy audio backend imports.
+- `installer/build.py` - Linux/Windows PyInstaller build script.
+- `installer/V2TTS.spec` - PyInstaller spec.
+- `installer/V2TTS.iss` - optional Windows Inno Setup installer script.
 
 ### Requirements
 
 - Python 3.12+
-- Node.js (for `sam` synthesis)
-- PortAudio system library
-- `ru_tts` binary available in the project TTS root or in `PATH`
+- Git submodules initialized
+- C compiler available as `gcc` to build the native `ru_tts` backend
+- PortAudio system library for `sounddevice`
 
-Python packages are listed in `pyproject.toml` and `requirements.txt`.
+Python dependencies are listed in `pyproject.toml` and `requirements.txt`.
 
 ### Install
+
+Clone with submodules:
+
+```bash
+git clone --recurse-submodules https://github.com/MrMagnusneo/V2TTS.git
+```
+
+Or initialize submodules in an existing clone:
+
+```bash
+git submodule update --init --recursive
+```
 
 System dependencies:
 
 Ubuntu/Debian:
+
 ```bash
-sudo apt install libportaudio2 portaudio19-dev
+sudo apt install gcc libportaudio2 portaudio19-dev
 ```
 
 Fedora:
+
 ```bash
-sudo dnf install portaudio portaudio-devel
+sudo dnf install gcc portaudio portaudio-devel
 ```
+
+Windows:
+
+- Install Python 3.12+
+- Install a GCC toolchain such as MSYS2 MinGW-w64
+- Optional installer build: install Inno Setup 6
 
 Python dependencies:
 
-Using uv:
 ```bash
-uv sync
+python -m pip install -r requirements.txt
 ```
-
-Or pip:
-```bash
-pip install -r requirements.txt
-```
-
-Optional (after installing PortAudio):
-
-```bash
-python -m pip install --force-reinstall sounddevice
-```
-
-### TTS paths
-
-Default TTS root:
-- `<project>/tts`
-
-Expected layout:
-- `tts/sam/dist/samjs.min.js`
-- `tts/ru_tts/...` with compiled `ru_tts` binary
-
-Environment overrides:
-
-- `V2TTS_TTS_ROOT`
-- `V2TTS_SAM_JS`
-- `V2TTS_RU_TTS_BIN`
 
 ### Run
 
@@ -92,56 +87,35 @@ Environment overrides:
 python main.py
 ```
 
-### Windows build (onefile + installer)
+### Build
 
-From PowerShell:
+Build on the OS you want to distribute for. PyInstaller does not cross-compile.
 
-```powershell
-cd installer
-.\build_windows.ps1
+```bash
+python installer/build.py
+```
+
+Results:
+
+- Windows: `dist/V2TTS.exe`
+- Linux: `dist/V2TTS`
+
+Build the Windows installer:
+
+```bash
+python installer/build.py --installer
 ```
 
 Result:
-- `dist\V2TTS.exe`
 
-`build_windows.ps1` automatically downloads missing `sam` and `ru_tts` sources and prepares runtime assets.
-If local `ru_tts` runtime is not found, it tries prebuilt package download first (`ru_tts.exe` or `ru_tts.dll` + `rulex.dll`), and only then falls back to source build.
-Node runtime is also auto-staged (`node.exe` from local PATH or official Node.js ZIP download).
-Optional overrides:
-- `V2TTS_RU_TTS_EXE_URL`
-- `V2TTS_RU_TTS_PACKAGE_URL`
-- `V2TTS_NODE_EXE_URL`
-- `V2TTS_NODE_ZIP_URL`
-- `V2TTS_NODE_VERSION` (single version or comma-separated list)
-
-To build installer:
-
-```powershell
-cd installer
-.\build_installer.ps1
-```
-
-If Inno Setup is installed in a custom location, set `V2TTS_ISCC_PATH` to the full `ISCC.exe` path.
-If Inno Setup is missing, `build_installer.ps1` tries to install a local compiler copy into `<project>\.tools\InnoSetup6`.
-
-Result:
-- `dist-installer\V2TTS-Setup.exe`
+- `dist-installer/V2TTS-Setup.exe`
 
 ### Troubleshooting
 
-- `OSError: PortAudio library not found`:
-  install PortAudio system package and reinstall `sounddevice`.
-- `ru_tts` not found:
-  ensure binary exists in `tts` root or set `V2TTS_RU_TTS_BIN`.
-- `sam` not found:
-  ensure `samjs.min.js` exists or set `V2TTS_SAM_JS`.
-- `WinError 2` on TTS:
-  ensure runtime files exist: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, and either `runtime/tts/ru_tts/bin/ru_tts.exe` or `runtime/tts/ru_tts/bin/ru_tts.dll` (+ `rulex.dll`).
-
-### Notes
-
-- Language split is heuristic (Cyrillic/Latin detection).
-- Bottom GUI log is read-only.
+- `OSError: PortAudio library not found`: install PortAudio and reinstall `sounddevice`.
+- CUDA DLL errors: select `cpu` in the GUI or install the CUDA runtime required by your `ctranslate2` build.
+- `gcc` not found during build: install GCC/MSYS2 MinGW-w64 and make sure it is in `PATH`.
+- Slow STT: use `tiny` or `base`, select `cpu` if CUDA is not configured correctly.
 
 ---
 
@@ -150,86 +124,81 @@ Result:
 Десктопное GUI-приложение для real-time конвейера `speech -> text -> speech`.
 
 - STT: `faster-whisper`
-- TTS: `ru_tts` (русский) и `sam` (английский)
+- TTS: vendored Python `ru_tts` для русского и vendored Python `sam` для английского
 - GUI: `tkinter`
+- Сборка: один кроссплатформенный Python-скрипт
 
 ### Возможности
 
-- Запуск/остановка из GUI (без аргументов командной строки).
+- Запуск/остановка из GUI, без аргументов командной строки.
 - Выбор устройства STT: `cpu` или `cuda`.
 - Выбор размера STT-модели: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - Выбор устройств ввода/вывода аудио.
-- Автовыбор TTS-модели по языку текста (кириллица -> `ru_tts`, латиница -> `sam`).
-- Ручной выбор TTS-модели (`ru_tts`, `sam`).
-- Единый кроссплатформенный путь к TTS-моделям (Linux/Windows).
+- Автовыбор TTS по языку текста: кириллица -> `ru_tts`, латиница -> `sam`.
+- Ручной выбор TTS: `ru_tts` или `sam`.
 
-### Структура проекта
+### Структура Проекта
 
 - `main.py` - точка входа и связывание компонентов.
-- `gui.py` - только GUI (виджеты/события).
+- `gui.py` - виджеты GUI и события UI.
 - `audio_stream.py` - поток микрофона и разбиение на фразы.
+- `audio_queue.py` - runtime-цикл: `STT -> TTS -> playback`.
 - `stt.py` - логика Whisper.
-- `tts.py` - роутинг TTS и резолв путей.
-- `audio_queue.py` - runtime-цикл (`STT -> TTS -> playback`).
-- `devices.py` - функции получения аудиоустройств.
-- `audio_backend.py` - ленивые импорты аудио-бэкенда (`sounddevice`, `soundfile`).
-- `installer/` - скрипты сборки Windows (`PyInstaller` + `Inno Setup`).
+- `tts.py` - роутинг TTS через vendored Python-движки.
+- `devices.py` - поиск аудиоустройств.
+- `audio_backend.py` - ленивые импорты аудио-бэкенда.
+- `installer/build.py` - скрипт сборки для Linux/Windows через PyInstaller.
+- `installer/V2TTS.spec` - spec-файл PyInstaller.
+- `installer/V2TTS.iss` - опциональный установщик Windows через Inno Setup.
 
 ### Требования
 
 - Python 3.12+
-- Node.js (для `sam`)
-- Системная библиотека PortAudio
-- Бинарник `ru_tts` в TTS-каталоге проекта или в `PATH`
+- Инициализированные git submodules
+- C-компилятор `gcc` для сборки native backend `ru_tts`
+- Системная библиотека PortAudio для `sounddevice`
 
 Python-зависимости указаны в `pyproject.toml` и `requirements.txt`.
 
 ### Установка
 
+Клонирование с submodules:
+
+```bash
+git clone --recurse-submodules https://github.com/MrMagnusneo/V2TTS.git
+```
+
+Или инициализация submodules в уже существующем клоне:
+
+```bash
+git submodule update --init --recursive
+```
+
 Системные зависимости:
 
 Ubuntu/Debian:
+
 ```bash
-sudo apt install libportaudio2 portaudio19-dev
+sudo apt install gcc libportaudio2 portaudio19-dev
 ```
 
 Fedora:
+
 ```bash
-sudo dnf install portaudio portaudio-devel
+sudo dnf install gcc portaudio portaudio-devel
 ```
+
+Windows:
+
+- Установи Python 3.12+
+- Установи GCC toolchain, например MSYS2 MinGW-w64
+- Для сборки установщика установи Inno Setup 6
 
 Python-зависимости:
 
-Через uv:
 ```bash
-uv sync
+python -m pip install -r requirements.txt
 ```
-
-Или через pip:
-```bash
-pip install -r requirements.txt
-```
-
-Опционально (после установки PortAudio):
-
-```bash
-python -m pip install --force-reinstall sounddevice
-```
-
-### Пути к TTS
-
-Путь по умолчанию:
-- `<project>/tts`
-
-Ожидаемая структура:
-- `tts/sam/dist/samjs.min.js`
-- `tts/ru_tts/...` с собранным бинарником `ru_tts`
-
-Переопределение через переменные окружения:
-
-- `V2TTS_TTS_ROOT`
-- `V2TTS_SAM_JS`
-- `V2TTS_RU_TTS_BIN`
 
 ### Запуск
 
@@ -237,53 +206,32 @@ python -m pip install --force-reinstall sounddevice
 python main.py
 ```
 
-### Сборка Windows (onefile + установщик)
+### Сборка
 
-Из PowerShell:
+Собирать нужно на той ОС, под которую нужен бинарник. PyInstaller не делает cross-compile.
 
-```powershell
-cd installer
-.\build_windows.ps1
+```bash
+python installer/build.py
+```
+
+Результаты:
+
+- Windows: `dist/V2TTS.exe`
+- Linux: `dist/V2TTS`
+
+Сборка Windows-установщика:
+
+```bash
+python installer/build.py --installer
 ```
 
 Результат:
-- `dist\V2TTS.exe`
 
-`build_windows.ps1` автоматически скачивает недостающие исходники `sam` и `ru_tts` и готовит runtime-ассеты.
-Если локальный runtime `ru_tts` не найден, скрипт сначала пробует скачать готовый пакет (`ru_tts.exe` или `ru_tts.dll` + `rulex.dll`), и только потом переходит к сборке из исходников.
-Runtime для Node тоже подготавливается автоматически (`node.exe` из PATH или из официального ZIP Node.js).
-Опциональные переменные:
-- `V2TTS_RU_TTS_EXE_URL`
-- `V2TTS_RU_TTS_PACKAGE_URL`
-- `V2TTS_NODE_EXE_URL`
-- `V2TTS_NODE_ZIP_URL`
-- `V2TTS_NODE_VERSION` (одна версия или список через запятую)
+- `dist-installer/V2TTS-Setup.exe`
 
-Сборка установщика:
+### Решение Проблем
 
-```powershell
-cd installer
-.\build_installer.ps1
-```
-
-Если Inno Setup установлен в нестандартную директорию, задай `V2TTS_ISCC_PATH` (полный путь к `ISCC.exe`).
-Если Inno Setup не установлен, `build_installer.ps1` попробует поставить локальную копию компилятора в `<project>\.tools\InnoSetup6`.
-
-Результат:
-- `dist-installer\V2TTS-Setup.exe`
-
-### Решение проблем
-
-- `OSError: PortAudio library not found`:
-  установи системный пакет PortAudio и переустанови `sounddevice`.
-- Не найден `ru_tts`:
-  проверь, что бинарник есть в `tts` или задай `V2TTS_RU_TTS_BIN`.
-- Не найден `sam`:
-  проверь, что `samjs.min.js` существует, или задай `V2TTS_SAM_JS`.
-- `WinError 2` при TTS:
-  проверь runtime-файлы: `runtime/node/node.exe`, `runtime/tts/sam/dist/samjs.min.js`, и либо `runtime/tts/ru_tts/bin/ru_tts.exe`, либо `runtime/tts/ru_tts/bin/ru_tts.dll` (+ `rulex.dll`).
-
-### Примечания
-
-- Выбор языка для TTS эвристический (кириллица/латиница).
-- Нижний лог в GUI только для чтения.
+- `OSError: PortAudio library not found`: установи PortAudio и переустанови `sounddevice`.
+- Ошибки CUDA DLL: выбери `cpu` в GUI или установи CUDA runtime, который нужен твоей сборке `ctranslate2`.
+- `gcc` не найден при сборке: установи GCC/MSYS2 MinGW-w64 и добавь его в `PATH`.
+- STT работает медленно: используй `tiny` или `base`, выбирай `cpu`, если CUDA настроена некорректно.

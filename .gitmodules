@@ -1,9 +1,9 @@
-[submodule "/home/x13/VScodeProjects/my_projects/V2TTS/tts/ru_tts-python"]
-	path = /home/x13/VScodeProjects/my_projects/V2TTS/tts/ru_tts-python
+[submodule "tts/ru_tts-python"]
+	path = tts/ru_tts-python
 	url = https://github.com/MrMagnusneo/ru_tts-python
-[submodule "/home/x13/VScodeProjects/my_projects/V2TTS/tts/sam-python"]
-	path = /home/x13/VScodeProjects/my_projects/V2TTS/tts/sam-python
+[submodule "tts/sam-python"]
+	path = tts/sam-python
 	url = https://github.com/MrMagnusneo/sam-python
-[submodule "/home/x13/VScodeProjects/my_projects/V2TTS/tts/dectalk-python"]
-	path = /home/x13/VScodeProjects/my_projects/V2TTS/tts/dectalk-python
+[submodule "tts/dectalk-python"]
+	path = tts/dectalk-python
 	url = https://github.com/MrMagnusneo/dectalk-python
