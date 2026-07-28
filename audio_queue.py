@@ -73,8 +73,8 @@ class SpeechLoopRunner:
                 device=self.config.stt_device,
                 compute_type=None,
                 language=None,
-                beam_size=2,
-                vad_filter=False,
+                beam_size=5,
+                vad_filter=True,
             )
 
             stt_desc = f"STT: requested={transcriber.requested_device}, actual={transcriber.actual_device}, sr={stream_cfg.sample_rate}"

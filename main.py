@@ -1,4 +1,15 @@
+import subprocess
+import sys
 import tkinter as tk
+
+try:
+    import faster_whisper
+    import sounddevice
+    import soundfile
+    import silero_tts
+except ImportError:
+    print("Missing dependencies. Installing automatically...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
 
 from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_input_devices, list_output_devices, parse_index_from_label
