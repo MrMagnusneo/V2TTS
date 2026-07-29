@@ -76,9 +76,9 @@ class AppController:
 
         self.runner = SpeechLoopRunner(
             config=config,
-            on_status=self.gui.post_status,
-            on_text=self.gui.post_text,
-            on_error=self.gui.post_error,
+            on_status=lambda msg: self.gui.enqueue_event("status", msg),
+            on_text=lambda msg: self.gui.enqueue_event("text", msg),
+            on_error=lambda msg: self.gui.enqueue_event("error", msg),
         )
         self.runner.start()
 

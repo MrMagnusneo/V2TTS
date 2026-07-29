@@ -162,14 +162,8 @@ class AppGUI:
     def stop(self) -> None:
         self.on_stop()
 
-    def post_status(self, msg: str) -> None:
-        self.ui_queue.put(("status", msg))
-
-    def post_text(self, msg: str) -> None:
-        self.ui_queue.put(("text", msg))
-
-    def post_error(self, msg: str) -> None:
-        self.ui_queue.put(("error", msg))
+    def enqueue_event(self, kind: str, msg: str) -> None:
+        self.ui_queue.put((kind, msg))
 
     def _poll_ui_queue(self) -> None:
         try:
