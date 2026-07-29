@@ -1,4 +1,5 @@
 import pytest
+import unittest
 from tts import choose_tts_engine
 
 def test_choose_tts_engine_manual_override():
@@ -15,8 +16,6 @@ def test_choose_tts_engine_edge_cases():
     assert choose_tts_engine("!@#") == "sam"
     assert choose_tts_engine("123") == "sam"
     assert choose_tts_engine("   ") == "sam"
-import unittest
-from tts import choose_tts_engine
 
 class TestChooseTTSEngine(unittest.TestCase):
     def test_auto_select_false_returns_manual_model(self):
