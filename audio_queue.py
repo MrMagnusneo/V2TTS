@@ -1,5 +1,5 @@
+import io
 import os
-import tempfile
 import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -94,8 +94,7 @@ class SpeechLoopRunner:
 
                 self.on_text(text)
 
-                fd, out_wav = tempfile.mkstemp(suffix=".wav")
-                os.close(fd)
+                out_wav = io.BytesIO()
                 try:
                     used_engine = synthesize_text(
                         text=text,
@@ -105,14 +104,12 @@ class SpeechLoopRunner:
                         tts_root=self.config.tts_root,
                     )
                     self.on_status(f"Listening... ({stt_desc}, tts={used_engine})")
+                    out_wav.seek(0)
                     data, fs = sf.read(out_wav, dtype="float32")
                     sd.play(data, fs, device=self.config.output_device)
                     sd.wait()
                 except Exception as exc:
                     self.on_error(f"TTS/Playback failed: {exc}")
-                finally:
-                    if os.path.exists(out_wav):
-                        os.remove(out_wav)
 
             self.on_status("Stopped")
         except Exception as exc:
