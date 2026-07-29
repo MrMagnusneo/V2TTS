@@ -27,6 +27,11 @@ class AudioPhraseStream:
     def __init__(self, config: StreamConfig):
         self.config = config
         self._frames_q: "queue.Queue[np.ndarray]" = queue.Queue()
+        self.silence_frames_limit = max(1, self.config.max_silence_ms // self.config.frame_ms)
+        self.min_frames = max(1, self.config.min_phrase_ms // self.config.frame_ms)
+        self.collecting = False
+        self.silence_frames = 0
+        self.phrase_frames = []
 
     def _callback(self, indata, frames, time_info, status):
         if status:
@@ -34,18 +39,45 @@ class AudioPhraseStream:
         frame = np.array(indata[:, 0], dtype=np.float32, copy=True)
         self._frames_q.put(frame)
 
+    def _process_frame(self, frame: np.ndarray) -> Optional[np.ndarray]:
+        rms = math.sqrt(float(np.mean(np.square(frame))) + 1e-12)
+
+        if not self.collecting:
+            if rms >= self.config.start_threshold:
+                self.collecting = True
+                self.silence_frames = 0
+                self.phrase_frames = [frame]
+            return None
+
+        self.phrase_frames.append(frame)
+
+        if rms < self.config.stop_threshold:
+            self.silence_frames += 1
+        else:
+            self.silence_frames = 0
+
+        enough_voice = len(self.phrase_frames) >= self.min_frames
+        phrase_finished = self.silence_frames >= self.silence_frames_limit
+
+        if enough_voice and phrase_finished:
+            audio = np.concatenate(self.phrase_frames)
+            audio = np.clip(audio, -1.0, 1.0)
+            pcm16 = (audio * 32767.0).astype(np.int16)
+
+            self.collecting = False
+            self.silence_frames = 0
+            self.phrase_frames = []
+
+            return pcm16
+
+        return None
+
     def iter_phrases(
         self,
         stop_event: Optional[threading.Event] = None,
     ) -> Generator[np.ndarray, None, None]:
         sd = get_sounddevice()
         frame_samples = int(self.config.sample_rate * self.config.frame_ms / 1000)
-        silence_frames_limit = max(1, self.config.max_silence_ms // self.config.frame_ms)
-        min_frames = max(1, self.config.min_phrase_ms // self.config.frame_ms)
-
-        collecting = False
-        silence_frames = 0
-        phrase_frames = []
 
         with sd.InputStream(
             samplerate=self.config.sample_rate,
@@ -64,30 +96,6 @@ class AudioPhraseStream:
                 except queue.Empty:
                     continue
 
-                rms = math.sqrt(float(np.mean(np.square(frame))) + 1e-12)
-
-                if not collecting:
-                    if rms >= self.config.start_threshold:
-                        collecting = True
-                        silence_frames = 0
-                        phrase_frames = [frame]
-                    continue
-
-                phrase_frames.append(frame)
-
-                if rms < self.config.stop_threshold:
-                    silence_frames += 1
-                else:
-                    silence_frames = 0
-
-                enough_voice = len(phrase_frames) >= min_frames
-                phrase_finished = silence_frames >= silence_frames_limit
-
-                if enough_voice and phrase_finished:
-                    audio = np.concatenate(phrase_frames)
-                    audio = np.clip(audio, -1.0, 1.0)
-                    pcm16 = (audio * 32767.0).astype(np.int16)
+                pcm16 = self._process_frame(frame)
+                if pcm16 is not None:
                     yield pcm16
-                    collecting = False
-                    silence_frames = 0
-                    phrase_frames = []
