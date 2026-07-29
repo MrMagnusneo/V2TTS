@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 def get_sounddevice():
     try:
         import sounddevice as sd  # type: ignore
