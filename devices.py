@@ -17,17 +17,16 @@ class AudioDevice:
 
 def list_audio_devices() -> List[AudioDevice]:
     sd = get_sounddevice()
-    result: List[AudioDevice] = []
-    for idx, dev in enumerate(sd.query_devices()):
-        result.append(
-            AudioDevice(
-                index=idx,
-                name=str(dev["name"]),
-                max_input_channels=int(dev["max_input_channels"]),
-                max_output_channels=int(dev["max_output_channels"]),
-            )
+    devices = sd.query_devices()
+    return [
+        AudioDevice(
+            index=idx,
+            name=str(dev["name"]),
+            max_input_channels=int(dev["max_input_channels"]),
+            max_output_channels=int(dev["max_output_channels"]),
         )
-    return result
+        for idx, dev in enumerate(devices)
+    ]
 
 
 def list_input_devices() -> List[AudioDevice]:

@@ -1,5 +1,5 @@
+import io
 import os
-import tempfile
 import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -92,6 +92,9 @@ class SpeechLoopRunner:
 
                 fd, out_wav = tempfile.mkstemp(suffix=".wav")
                 os.close(fd)
+                self.on_text(text)
+
+                out_wav = io.BytesIO()
                 try:
                     used_engine = synthesize_text(
                         text=text,
@@ -101,14 +104,12 @@ class SpeechLoopRunner:
                         tts_root=self.config.tts_root,
                     )
                     self.on_status(f"Listening... ({stt_desc}, tts={used_engine})")
+                    out_wav.seek(0)
                     data, fs = sf.read(out_wav, dtype="float32")
                     sd.play(data, fs, device=self.config.output_device)
                     sd.wait()
                 except Exception as exc:
                     self.on_error(f"TTS/Playback failed: {exc}")
-                finally:
-                    if os.path.exists(out_wav):
-                        os.remove(out_wav)
 
             self.on_status("Stopped")
         except Exception as exc:
@@ -117,8 +118,24 @@ class SpeechLoopRunner:
 
     @staticmethod
     def _select_input_sample_rate(sd, device_index: Optional[int]) -> int:
+        try:
+            info = sd.query_devices(device_index, "input")
+            raw_sr = float(info.get("default_samplerate") or 16000.0)
+            default_sr = int(round(raw_sr)) if raw_sr > 0 else 16000
+            sd.check_input_settings(
+                device=device_index,
+                channels=1,
+                samplerate=default_sr,
+                dtype="float32",
+            )
+            return default_sr
+        except Exception:
+            default_sr = None
+
         preferred_rates = [16000, 32000, 44100, 48000]
         for sr in preferred_rates:
+            if sr == default_sr:
+                continue
             try:
                 sd.check_input_settings(
                     device=device_index,
@@ -130,6 +147,4 @@ class SpeechLoopRunner:
             except Exception:
                 continue
 
-        info = sd.query_devices(device_index, "input")
-        raw_sr = float(info.get("default_samplerate") or 16000.0)
-        return int(round(raw_sr)) if raw_sr > 0 else 16000
+        return default_sr or 16000
