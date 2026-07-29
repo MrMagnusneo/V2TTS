@@ -121,8 +121,24 @@ class SpeechLoopRunner:
 
     @staticmethod
     def _select_input_sample_rate(sd, device_index: Optional[int]) -> int:
+        try:
+            info = sd.query_devices(device_index, "input")
+            raw_sr = float(info.get("default_samplerate") or 16000.0)
+            default_sr = int(round(raw_sr)) if raw_sr > 0 else 16000
+            sd.check_input_settings(
+                device=device_index,
+                channels=1,
+                samplerate=default_sr,
+                dtype="float32",
+            )
+            return default_sr
+        except Exception:
+            default_sr = None
+
         preferred_rates = [16000, 32000, 44100, 48000]
         for sr in preferred_rates:
+            if sr == default_sr:
+                continue
             try:
                 sd.check_input_settings(
                     device=device_index,
@@ -134,6 +150,4 @@ class SpeechLoopRunner:
             except Exception:
                 continue
 
-        info = sd.query_devices(device_index, "input")
-        raw_sr = float(info.get("default_samplerate") or 16000.0)
-        return int(round(raw_sr)) if raw_sr > 0 else 16000
+        return default_sr or 16000
