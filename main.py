@@ -9,10 +9,12 @@ try:
     import silero_tts
 except ImportError:
     print("Missing dependencies. Installing automatically...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
+    )
 
 from audio_queue import RunConfig, SpeechLoopRunner
-from devices import list_input_devices, list_output_devices, parse_index_from_label
+from devices import list_audio_devices, parse_index_from_label
 from gui import AppGUI
 from stt import STT_DEVICES, STT_MODEL_SIZES
 from tts import TTS_MODELS, prepare_runtime_tts_root
@@ -39,8 +41,9 @@ class AppController:
         )
 
     def refresh_devices(self) -> tuple[list[str], list[str]]:
-        inputs = list_input_devices()
-        outputs = list_output_devices()
+        all_devices = list_audio_devices()
+        inputs = [d for d in all_devices if d.max_input_channels > 0]
+        outputs = [d for d in all_devices if d.max_output_channels > 0]
 
         input_labels = [d.label() for d in inputs]
         output_labels = [d.label() for d in outputs]
@@ -62,7 +65,9 @@ class AppController:
             return
 
         input_idx = self._resolve_index(settings["input_device_label"], self.input_map)
-        output_idx = self._resolve_index(settings["output_device_label"], self.output_map)
+        output_idx = self._resolve_index(
+            settings["output_device_label"], self.output_map
+        )
 
         config = RunConfig(
             input_device=input_idx,
@@ -79,6 +84,10 @@ class AppController:
             on_status=lambda msg: self.gui.enqueue_event("status", msg),
             on_text=lambda msg: self.gui.enqueue_event("text", msg),
             on_error=lambda msg: self.gui.enqueue_event("error", msg),
+            on_status=self.gui.post_status,
+            on_error=self.gui.post_error,
+            on_text=self.gui.post_text,
+            on_error=lambda msg: None,
         )
         self.runner.start()
 

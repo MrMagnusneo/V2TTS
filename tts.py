@@ -3,7 +3,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import BinaryIO, Optional, Union
 
 CYR = re.compile(r"[А-Яа-яЁё]")
 LAT = re.compile(r"[A-Za-z]")
@@ -131,7 +131,7 @@ def choose_tts_engine(text: str, auto_select: bool = True, manual_model: str = "
     return "sam"
 
 
-def tts_silero(text: str, out_wav: str, paths: TTSPaths) -> None:
+def tts_silero(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
     global _SILERO_ENGINE
     if _SILERO_ENGINE is None:
         from silero_tts.silero_tts import SileroTTS
@@ -145,12 +145,16 @@ def tts_silero(text: str, out_wav: str, paths: TTSPaths) -> None:
     _SILERO_ENGINE.tts(text, out_wav)
 
 
-def tts_sam(text: str, out_wav: str, paths: TTSPaths) -> None:
+def tts_sam(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
     _add_vendor_paths(paths)
     from sam_python.engine import SamPythonEngine
 
     engine = SamPythonEngine(speed=72, pitch=64, throat=128, mouth=128)
-    Path(out_wav).write_bytes(engine.synthesize_wav(text))
+    wav_bytes = engine.synthesize_wav(text)
+    if isinstance(out_wav, str):
+        Path(out_wav).write_bytes(wav_bytes)
+    else:
+        out_wav.write(wav_bytes)
 
 
 def _ru_tts_engine(paths: TTSPaths):
@@ -167,14 +171,18 @@ def _ru_tts_engine(paths: TTSPaths):
     return engine
 
 
-def tts_ru_tts(text: str, out_wav: str, paths: TTSPaths) -> None:
+def tts_ru_tts(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
     engine = _ru_tts_engine(paths)
-    Path(out_wav).write_bytes(engine.synthesize_wav(text, args=["-r", "1.0"]))
+    wav_bytes = engine.synthesize_wav(text, args=["-r", "1.0"])
+    if isinstance(out_wav, str):
+        Path(out_wav).write_bytes(wav_bytes)
+    else:
+        out_wav.write(wav_bytes)
 
 
 def synthesize_text(
     text: str,
-    out_wav: str,
+    out_wav: Union[str, BinaryIO],
     auto_select: bool = True,
     manual_model: str = "silero",
     tts_root: Optional[str] = None,
