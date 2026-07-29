@@ -78,7 +78,7 @@ class AppController:
             config=config,
             on_status=self.gui.post_status,
             on_text=self.gui.post_text,
-            on_error=self.gui.post_error,
+            on_error=lambda msg: None,
         )
         self.runner.start()
 

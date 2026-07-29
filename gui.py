@@ -168,9 +168,6 @@ class AppGUI:
     def post_text(self, msg: str) -> None:
         self.ui_queue.put(("text", msg))
 
-    def post_error(self, msg: str) -> None:
-        self.ui_queue.put(("error", msg))
-
     def _poll_ui_queue(self) -> None:
         try:
             while True:
@@ -179,9 +176,6 @@ class AppGUI:
                     self.status_var.set(msg)
                 elif kind == "text":
                     self._append_log(f"STT: {msg}\n")
-                elif kind == "error":
-                    self._append_log(f"ERROR: {msg}\n")
-                    messagebox.showerror("Runtime error", msg)
         except queue.Empty:
             pass
 
