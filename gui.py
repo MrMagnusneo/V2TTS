@@ -169,6 +169,8 @@ class AppGUI:
     def stop(self) -> None:
         self.on_stop()
 
+    def enqueue_event(self, kind: str, msg: str) -> None:
+        self.ui_queue.put((kind, msg))
     def post_status(self, msg: str) -> None:
         self.ui_queue.put(("status", msg))
 
