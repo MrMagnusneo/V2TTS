@@ -47,6 +47,13 @@ class AppGUI:
         frm = ttk.Frame(self.root, padding=12)
         frm.pack(fill="both", expand=True)
 
+        self._build_settings_frame(frm)
+        self._build_buttons_frame(frm)
+        self._build_status_frame(frm)
+
+        self._toggle_tts_model_combo()
+
+    def _build_settings_frame(self, frm: ttk.Frame) -> None:
         cfg = ttk.LabelFrame(frm, text="Settings", padding=10)
         cfg.pack(fill="x")
 
@@ -103,12 +110,14 @@ class AppGUI:
             pady=4,
         )
 
+    def _build_buttons_frame(self, frm: ttk.Frame) -> None:
         btn_row = ttk.Frame(frm)
         btn_row.pack(fill="x", pady=(10, 8))
         ttk.Button(btn_row, text="Refresh Devices", command=self.refresh_devices).pack(side="left")
         ttk.Button(btn_row, text="Start", command=self.start).pack(side="left", padx=6)
         ttk.Button(btn_row, text="Stop", command=self.stop).pack(side="left")
 
+    def _build_status_frame(self, frm: ttk.Frame) -> None:
         status = ttk.LabelFrame(frm, text="Status", padding=10)
         status.pack(fill="both", expand=True)
         ttk.Label(status, textvariable=self.status_var).pack(anchor="w")
@@ -116,8 +125,6 @@ class AppGUI:
         self.log = tk.Text(status, height=20, wrap="word")
         self.log.pack(fill="both", expand=True, pady=(8, 0))
         self.log.configure(state="disabled")
-
-        self._toggle_tts_model_combo()
 
     def _toggle_tts_model_combo(self) -> None:
         if self.auto_tts_var.get():
