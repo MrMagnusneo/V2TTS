@@ -81,6 +81,7 @@ class SpeechLoopRunner:
                 if self._stop_event.is_set():
                     break
 
+                self._process_phrase(phrase_pcm16, transcriber, stream_cfg.sample_rate, stt_desc, sd, sf)
                 try:
                     text = transcriber.transcribe_pcm16(phrase_pcm16, sample_rate=stream_cfg.sample_rate)
                 except Exception as exc:
@@ -115,6 +116,38 @@ class SpeechLoopRunner:
         except Exception as exc:
             self.on_error(str(exc))
             self.on_status("Stopped (error)")
+
+    def _process_phrase(self, phrase_pcm16, transcriber, sample_rate, stt_desc, sd, sf) -> None:
+        try:
+            text = transcriber.transcribe_pcm16(phrase_pcm16, sample_rate=sample_rate)
+        except Exception as exc:
+            self.on_error(f"STT failed: {exc}")
+            return
+
+        if not text:
+            return
+
+        self.on_text(text)
+
+        fd, out_wav = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            used_engine = synthesize_text(
+                text=text,
+                out_wav=out_wav,
+                auto_select=self.config.auto_tts_model,
+                manual_model=self.config.manual_tts_model,
+                tts_root=self.config.tts_root,
+            )
+            self.on_status(f"Listening... ({stt_desc}, tts={used_engine})")
+            data, fs = sf.read(out_wav, dtype="float32")
+            sd.play(data, fs, device=self.config.output_device)
+            sd.wait()
+        except Exception as exc:
+            self.on_error(f"TTS/Playback failed: {exc}")
+        finally:
+            if os.path.exists(out_wav):
+                os.remove(out_wav)
 
     @staticmethod
     def _select_input_sample_rate(sd, device_index: Optional[int]) -> int:
