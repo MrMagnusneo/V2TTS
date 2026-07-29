@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+import functools
+
+
+@functools.lru_cache()
 def get_sounddevice():
     try:
         import sounddevice as sd  # type: ignore
@@ -11,6 +17,7 @@ def get_sounddevice():
     return sd
 
 
+@functools.lru_cache()
 def get_soundfile():
     try:
         import soundfile as sf  # type: ignore
