@@ -1,4 +1,5 @@
 import unittest
+from stt import default_compute_type
 from unittest.mock import patch, MagicMock
 import os
 from stt import WhisperTranscriber, default_compute_type
