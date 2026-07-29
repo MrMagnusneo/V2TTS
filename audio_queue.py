@@ -26,12 +26,10 @@ class SpeechLoopRunner:
         self,
         config: RunConfig,
         on_status: Callable[[str], None],
-        on_text: Callable[[str], None],
         on_error: Callable[[str], None],
     ):
         self.config = config
         self.on_status = on_status
-        self.on_text = on_text
         self.on_error = on_error
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -92,6 +90,8 @@ class SpeechLoopRunner:
                 if not text:
                     continue
 
+                fd, out_wav = tempfile.mkstemp(suffix=".wav")
+                os.close(fd)
                 self.on_text(text)
 
                 out_wav = io.BytesIO()

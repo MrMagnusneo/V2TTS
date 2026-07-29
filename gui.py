@@ -172,6 +172,8 @@ class AppGUI:
     def post_status(self, msg: str) -> None:
         self.ui_queue.put(("status", msg))
 
+    def post_error(self, msg: str) -> None:
+        self.ui_queue.put(("error", msg))
     def post_text(self, msg: str) -> None:
         self.ui_queue.put(("text", msg))
 
@@ -181,6 +183,9 @@ class AppGUI:
                 kind, msg = self.ui_queue.get_nowait()
                 if kind == "status":
                     self.status_var.set(msg)
+                elif kind == "error":
+                    self._append_log(f"ERROR: {msg}\n")
+                    messagebox.showerror("Runtime error", msg)
                 elif kind == "text":
                     self._append_log(f"STT: {msg}\n")
         except queue.Empty:
