@@ -8,7 +8,7 @@ from typing import BinaryIO, Optional, Union
 CYR = re.compile(r"[А-Яа-яЁё]")
 LAT = re.compile(r"[A-Za-z]")
 
-TTS_MODELS = ["ru_tts", "sam", "silero"]
+TTS_MODELS = ["ru_tts", "sam"]
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,6 @@ class TTSPaths:
 
 
 _RU_TTS_ENGINES: dict[Path, object] = {}
-_SILERO_ENGINE = None
 
 
 def _is_frozen() -> bool:
@@ -120,29 +119,15 @@ def _add_vendor_paths(paths: TTSPaths) -> None:
                 sys.path.insert(0, package_root_str)
 
 
-def choose_tts_engine(text: str, auto_select: bool = True, manual_model: str = "silero") -> str:
+def choose_tts_engine(text: str, auto_select: bool = True, manual_model: str = "ru_tts") -> str:
     if not auto_select:
         return manual_model
 
     if CYR.search(text):
-        return "silero"
+        return "ru_tts"
     if LAT.search(text):
         return "sam"
     return "sam"
-
-
-def tts_silero(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
-    global _SILERO_ENGINE
-    if _SILERO_ENGINE is None:
-        from silero_tts.silero_tts import SileroTTS
-        _SILERO_ENGINE = SileroTTS(
-            model_id='v4_ru',
-            language='ru',
-            speaker='eugene',
-            sample_rate=24000,
-            device='cpu'
-        )
-    _SILERO_ENGINE.tts(text, out_wav)
 
 
 def tts_sam(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
@@ -184,16 +169,13 @@ def synthesize_text(
     text: str,
     out_wav: Union[str, BinaryIO],
     auto_select: bool = True,
-    manual_model: str = "silero",
+    manual_model: str = "ru_tts",
     tts_root: Optional[str] = None,
 ) -> str:
     paths = resolve_tts_paths(tts_root)
     requested = choose_tts_engine(text, auto_select=auto_select, manual_model=manual_model)
     chain = [requested]
-    if requested == "silero":
-        chain.append("ru_tts")
-        chain.append("sam")
-    elif requested == "ru_tts":
+    if requested == "ru_tts":
         chain.append("sam")
 
     last_error: Optional[Exception] = None
@@ -205,9 +187,7 @@ def synthesize_text(
         tried.append(engine)
 
         try:
-            if engine == "silero":
-                tts_silero(text, out_wav, paths)
-            elif engine == "ru_tts":
+            if engine == "ru_tts":
                 tts_ru_tts(text, out_wav, paths)
             elif engine == "sam":
                 tts_sam(text, out_wav, paths)

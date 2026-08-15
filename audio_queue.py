@@ -1,5 +1,5 @@
-import io
 import os
+import tempfile
 import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -26,10 +26,12 @@ class SpeechLoopRunner:
         self,
         config: RunConfig,
         on_status: Callable[[str], None],
+        on_text: Callable[[str], None],
         on_error: Callable[[str], None],
     ):
         self.config = config
         self.on_status = on_status
+        self.on_text = on_text
         self.on_error = on_error
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -81,36 +83,14 @@ class SpeechLoopRunner:
                 if self._stop_event.is_set():
                     break
 
-                self._process_phrase(phrase_pcm16, transcriber, stream_cfg.sample_rate, stt_desc, sd, sf)
-                try:
-                    text = transcriber.transcribe_pcm16(phrase_pcm16, sample_rate=stream_cfg.sample_rate)
-                except Exception as exc:
-                    self.on_error(f"STT failed: {exc}")
-                    continue
-
-                if not text:
-                    continue
-
-                fd, out_wav = tempfile.mkstemp(suffix=".wav")
-                os.close(fd)
-                self.on_text(text)
-
-                out_wav = io.BytesIO()
-                try:
-                    used_engine = synthesize_text(
-                        text=text,
-                        out_wav=out_wav,
-                        auto_select=self.config.auto_tts_model,
-                        manual_model=self.config.manual_tts_model,
-                        tts_root=self.config.tts_root,
-                    )
-                    self.on_status(f"Listening... ({stt_desc}, tts={used_engine})")
-                    out_wav.seek(0)
-                    data, fs = sf.read(out_wav, dtype="float32")
-                    sd.play(data, fs, device=self.config.output_device)
-                    sd.wait()
-                except Exception as exc:
-                    self.on_error(f"TTS/Playback failed: {exc}")
+                self._process_phrase(
+                    phrase_pcm16,
+                    transcriber,
+                    stream_cfg.sample_rate,
+                    stt_desc,
+                    sd,
+                    sf,
+                )
 
             self.on_status("Stopped")
         except Exception as exc:
