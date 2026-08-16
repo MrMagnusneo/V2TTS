@@ -5,10 +5,99 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import numpy as np
+
 from audio_stream import AudioPhraseStream, StreamConfig
 from audio_backend import get_sounddevice, get_soundfile
 from stt import WhisperTranscriber
 from tts import synthesize_text
+
+
+def prepare_audio_for_output(
+    sd,
+    data,
+    source_rate: int,
+    device_index: Optional[int],
+) -> tuple[np.ndarray, int]:
+    audio = np.asarray(data, dtype=np.float32)
+    channels = 1 if audio.ndim == 1 else audio.shape[1]
+
+    def supports(sample_rate: int) -> bool:
+        try:
+            sd.check_output_settings(
+                device=device_index,
+                channels=channels,
+                samplerate=sample_rate,
+                dtype="float32",
+            )
+            return True
+        except Exception:
+            return False
+
+    if supports(source_rate):
+        return audio, source_rate
+
+    candidates: list[int] = []
+    try:
+        info = sd.query_devices(device_index, "output")
+        default_rate = int(round(float(info.get("default_samplerate") or 0)))
+        if default_rate > 0:
+            candidates.append(default_rate)
+    except Exception:
+        pass
+
+    candidates.extend([48000, 44100, 32000, 22050, 16000])
+    output_rate = next(
+        (
+            sample_rate
+            for sample_rate in dict.fromkeys(candidates)
+            if sample_rate != source_rate and supports(sample_rate)
+        ),
+        None,
+    )
+    if output_rate is None:
+        raise RuntimeError(
+            f"Output device {device_index} does not support the TTS sample rate "
+            f"{source_rate} Hz or standard fallback rates"
+        )
+
+    if len(audio) == 0:
+        return audio, output_rate
+
+    if output_rate < source_rate:
+        tap_count = 127
+        center = (tap_count - 1) / 2
+        positions = np.arange(tap_count, dtype=np.float64) - center
+        cutoff = 0.5 * output_rate / source_rate * 0.9
+        kernel = 2 * cutoff * np.sinc(2 * cutoff * positions)
+        kernel *= np.kaiser(tap_count, beta=8.6)
+        kernel /= np.sum(kernel)
+        padding = tap_count // 2
+
+        def lowpass(channel: np.ndarray) -> np.ndarray:
+            padded = np.pad(channel, (padding, padding), mode="edge")
+            return np.convolve(padded, kernel, mode="valid")
+
+        if audio.ndim == 1:
+            audio = lowpass(audio)
+        else:
+            audio = np.column_stack(
+                [lowpass(audio[:, channel]) for channel in range(channels)]
+            )
+
+    output_length = max(1, int(round(len(audio) * output_rate / source_rate)))
+    source_positions = np.arange(len(audio), dtype=np.float64) / source_rate
+    output_positions = np.arange(output_length, dtype=np.float64) / output_rate
+    if audio.ndim == 1:
+        resampled = np.interp(output_positions, source_positions, audio)
+    else:
+        resampled = np.column_stack(
+            [
+                np.interp(output_positions, source_positions, audio[:, channel])
+                for channel in range(channels)
+            ]
+        )
+    return resampled.astype(np.float32), output_rate
 
 
 @dataclass
@@ -160,7 +249,13 @@ class SpeechLoopRunner:
                 f"dropped_frames={dropped_frames})"
             )
             data, fs = sf.read(out_wav, dtype="float32")
-            sd.play(data, fs, device=self.config.output_device)
+            data, output_fs = prepare_audio_for_output(
+                sd,
+                data,
+                source_rate=fs,
+                device_index=self.config.output_device,
+            )
+            sd.play(data, output_fs, device=self.config.output_device)
             sd.wait()
         except Exception as exc:
             self.on_error(f"TTS/Playback failed: {exc}")
