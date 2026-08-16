@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import numpy as np
 
-from audio_stream import AudioPhraseStream, StreamConfig
+from audio_stream import AudioPhraseStream, FramePacket, StreamConfig
 
 
 class TestAudioPhraseStream(unittest.TestCase):
@@ -33,8 +33,12 @@ class TestAudioPhraseStream(unittest.TestCase):
         self.stream._callback(indata, frames, time_info, status)
 
         self.assertEqual(self.stream._frames_q.qsize(), 1)
-        frame = self.stream._frames_q.get_nowait()
-        np.testing.assert_array_equal(frame, np.array([1.0, 3.0, 5.0], dtype=np.float32))
+        packet = self.stream._frames_q.get_nowait()
+        np.testing.assert_array_equal(
+            packet.samples,
+            np.array([1.0, 3.0, 5.0], dtype=np.float32),
+        )
+        self.assertGreater(packet.captured_at, 0)
 
     @patch('audio_stream.get_sounddevice')
     def test_iter_phrases_happy_path(self, mock_get_sounddevice):
@@ -57,12 +61,18 @@ class TestAudioPhraseStream(unittest.TestCase):
         # 5. Silence (collecting, silence count = 2)
         # 6. Silence (collecting, silence count = 3 >= max_silence_ms/frame_ms (30/10=3))
         # -> Should yield phrase (Voice, Voice, Silence, Silence, Silence)
-        self.stream._frames_q.put(silence_frame)
-        self.stream._frames_q.put(voice_frame)
-        self.stream._frames_q.put(voice_frame)
-        self.stream._frames_q.put(silence_frame)
-        self.stream._frames_q.put(silence_frame)
-        self.stream._frames_q.put(silence_frame)
+        queued_frames = [
+            silence_frame,
+            voice_frame,
+            voice_frame,
+            silence_frame,
+            silence_frame,
+            silence_frame,
+        ]
+        for index, frame in enumerate(queued_frames):
+            self.stream._frames_q.put(
+                FramePacket(samples=frame, captured_at=float(index + 1))
+            )
 
         # Use an event to stop the iteration after queue is empty
         stop_event = threading.Event()
@@ -91,7 +101,8 @@ class TestAudioPhraseStream(unittest.TestCase):
         expected_audio = np.concatenate([voice_frame, voice_frame, silence_frame, silence_frame, silence_frame])
         expected_pcm16 = (expected_audio * 32767.0).astype(np.int16)
 
-        np.testing.assert_array_equal(result, expected_pcm16)
+        np.testing.assert_array_equal(result.pcm16, expected_pcm16)
+        self.assertEqual(result.ended_at, 6.0)
 
     @patch('audio_stream.get_sounddevice')
     def test_iter_phrases_stop_event(self, mock_get_sounddevice):

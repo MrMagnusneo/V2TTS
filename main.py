@@ -1,22 +1,31 @@
-import subprocess
+import importlib
 import sys
 import tkinter as tk
-
-try:
-    import faster_whisper
-    import sounddevice
-    import soundfile
-except ImportError:
-    print("Missing dependencies. Installing automatically...")
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
-    )
 
 from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_audio_devices, parse_index_from_label
 from gui import AppGUI
 from stt import STT_DEVICES, STT_MODEL_SIZES
 from tts import TTS_MODELS, prepare_runtime_tts_root
+
+
+RUNTIME_DEPENDENCIES = ("faster_whisper", "sounddevice", "soundfile")
+
+
+def check_runtime_dependencies() -> None:
+    unavailable: list[str] = []
+    for package in RUNTIME_DEPENDENCIES:
+        try:
+            importlib.import_module(package)
+        except Exception:
+            unavailable.append(package)
+
+    if unavailable:
+        packages = ", ".join(unavailable)
+        raise RuntimeError(
+            f"Missing or unusable runtime dependencies: {packages}. "
+            "Install them with: python -m pip install -r requirements.txt"
+        )
 
 
 class AppController:
@@ -94,10 +103,21 @@ class AppController:
         self.root.mainloop()
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    check_runtime_dependencies()
+
+    if args == ["--smoke-test"]:
+        from smoke_test import run_packaged_smoke
+
+        return run_packaged_smoke()
+    if args:
+        raise ValueError(f"Unknown arguments: {' '.join(args)}")
+
     app = AppController()
     app.run()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
