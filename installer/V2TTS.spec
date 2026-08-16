@@ -51,7 +51,9 @@ excluded_modules = [
 
 # Whisper runtime assets (including silero_vad_v6.onnx)
 datas += collect_data_files("faster_whisper")
+datas += collect_data_files("onnx_asr")
 binaries += collect_dynamic_libs("onnxruntime")
+hiddenimports += collect_submodules("onnx_asr")
 
 # Vendored Python TTS engines.
 hiddenimports += collect_submodules("sam_python")

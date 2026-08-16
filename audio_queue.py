@@ -1,297 +1,204 @@
-import os
-import tempfile
+import multiprocessing
+import queue
 import threading
-import time
-from dataclasses import dataclass
+import uuid
 from typing import Callable, Optional
 
-import numpy as np
-
-from audio_stream import AudioPhraseStream, StreamConfig
-from audio_backend import get_sounddevice, get_soundfile
-from stt import WhisperTranscriber
-from tts import synthesize_text
+from pipeline import RunConfig, pipeline_process_main, prepare_audio_for_output
 
 
-def prepare_audio_for_output(
-    sd,
-    data,
-    source_rate: int,
-    device_index: Optional[int],
-) -> tuple[np.ndarray, int]:
-    audio = np.asarray(data, dtype=np.float32)
-    channels = 1 if audio.ndim == 1 else audio.shape[1]
-
-    def supports(sample_rate: int) -> bool:
-        try:
-            sd.check_output_settings(
-                device=device_index,
-                channels=channels,
-                samplerate=sample_rate,
-                dtype="float32",
-            )
-            return True
-        except Exception:
-            return False
-
-    if supports(source_rate):
-        return audio, source_rate
-
-    candidates: list[int] = []
-    try:
-        info = sd.query_devices(device_index, "output")
-        default_rate = int(round(float(info.get("default_samplerate") or 0)))
-        if default_rate > 0:
-            candidates.append(default_rate)
-    except Exception:
-        pass
-
-    candidates.extend([48000, 44100, 32000, 22050, 16000])
-    output_rate = next(
-        (
-            sample_rate
-            for sample_rate in dict.fromkeys(candidates)
-            if sample_rate != source_rate and supports(sample_rate)
-        ),
-        None,
-    )
-    if output_rate is None:
-        raise RuntimeError(
-            f"Output device {device_index} does not support the TTS sample rate "
-            f"{source_rate} Hz or standard fallback rates"
-        )
-
-    if len(audio) == 0:
-        return audio, output_rate
-
-    if output_rate < source_rate:
-        tap_count = 127
-        center = (tap_count - 1) / 2
-        positions = np.arange(tap_count, dtype=np.float64) - center
-        cutoff = 0.5 * output_rate / source_rate * 0.9
-        kernel = 2 * cutoff * np.sinc(2 * cutoff * positions)
-        kernel *= np.kaiser(tap_count, beta=8.6)
-        kernel /= np.sum(kernel)
-        padding = tap_count // 2
-
-        def lowpass(channel: np.ndarray) -> np.ndarray:
-            padded = np.pad(channel, (padding, padding), mode="edge")
-            return np.convolve(padded, kernel, mode="valid")
-
-        if audio.ndim == 1:
-            audio = lowpass(audio)
-        else:
-            audio = np.column_stack(
-                [lowpass(audio[:, channel]) for channel in range(channels)]
-            )
-
-    output_length = max(1, int(round(len(audio) * output_rate / source_rate)))
-    source_positions = np.arange(len(audio), dtype=np.float64) / source_rate
-    output_positions = np.arange(output_length, dtype=np.float64) / output_rate
-    if audio.ndim == 1:
-        resampled = np.interp(output_positions, source_positions, audio)
-    else:
-        resampled = np.column_stack(
-            [
-                np.interp(output_positions, source_positions, audio[:, channel])
-                for channel in range(channels)
-            ]
-        )
-    return resampled.astype(np.float32), output_rate
+EventCallback = Callable[[str, str, str], None]
+ScheduleCallback = Callable[[int, Callable[[], None]], object]
 
 
-@dataclass
-class RunConfig:
-    input_device: Optional[int]
-    output_device: Optional[int]
-    stt_device: str
-    stt_model_size: str
-    auto_tts_model: bool
-    manual_tts_model: str
-    tts_root: Optional[str]
+def _schedule_with_timer(
+    delay_ms: int,
+    callback: Callable[[], None],
+) -> threading.Timer:
+    timer = threading.Timer(delay_ms / 1000.0, callback)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 class SpeechLoopRunner:
     def __init__(
         self,
         config: RunConfig,
-        on_status: Callable[[str], None],
-        on_text: Callable[[str], None],
-        on_error: Callable[[str], None],
+        on_event: EventCallback,
+        *,
+        on_stopped: Optional[Callable[[], None]] = None,
+        schedule: Optional[ScheduleCallback] = None,
+        mp_context=None,
     ):
         self.config = config
-        self.on_status = on_status
-        self.on_text = on_text
-        self.on_error = on_error
-        self._thread: Optional[threading.Thread] = None
-        self._stop_event = threading.Event()
+        self.on_event = on_event
+        self.on_stopped = on_stopped or (lambda: None)
+        self._schedule = schedule or _schedule_with_timer
+        self._context = mp_context or multiprocessing.get_context("spawn")
+
+        self._process = None
+        self._cancel_event = None
+        self._event_queue = None
+        self._active_run_id: Optional[str] = None
+        self._event_run_id: Optional[str] = None
+        self._monitor_thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
+
+    @property
+    def active_run_id(self) -> Optional[str]:
+        with self._lock:
+            return self._active_run_id
 
     def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        with self._lock:
+            if self._process is not None:
+                return
+
+            run_id = uuid.uuid4().hex
+            cancel_event = self._context.Event()
+            event_queue = self._context.Queue()
+            process = self._context.Process(
+                target=pipeline_process_main,
+                args=(run_id, self.config, cancel_event, event_queue),
+                name=f"V2TTS-pipeline-{run_id[:8]}",
+            )
+            self._active_run_id = run_id
+            self._event_run_id = run_id
+            self._cancel_event = cancel_event
+            self._event_queue = event_queue
+            self._process = process
+
+        try:
+            process.start()
+        except Exception:
+            with self._lock:
+                if self._process is process:
+                    self._process = None
+                    self._cancel_event = None
+                    self._event_queue = None
+                    self._active_run_id = None
+                    self._event_run_id = None
+            try:
+                event_queue.close()
+            except Exception:
+                pass
+            raise
+
+        monitor = threading.Thread(
+            target=self._monitor_worker,
+            args=(process, event_queue, run_id),
+            name=f"V2TTS-monitor-{run_id[:8]}",
+            daemon=True,
+        )
+        self._monitor_thread = monitor
+        monitor.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        try:
-            sd = get_sounddevice()
-            sd.stop()
-        except Exception:
-            pass
+        with self._lock:
+            process = self._process
+            cancel_event = self._cancel_event
+            if process is None:
+                return
+            self._active_run_id = None
+            self._event_run_id = None
+
+        if cancel_event is not None:
+            cancel_event.set()
+        self._schedule(300, lambda: self._terminate_if_alive(process))
 
     def is_running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive())
+        with self._lock:
+            process = self._process
+        return bool(process is not None and process.is_alive())
 
-    def _run(self) -> None:
-        try:
-            sd = get_sounddevice()
-            sf = get_soundfile()
-            default_sr = self._select_input_sample_rate(sd, self.config.input_device)
-            stream_cfg = StreamConfig(
-                sample_rate=default_sr,
-                channels=1,
-                frame_ms=20,
-                min_phrase_ms=180,
-                max_silence_ms=350,
-                device=self.config.input_device,
-            )
-            phrase_stream = AudioPhraseStream(stream_cfg)
-            transcriber = WhisperTranscriber(
-                model_size=self.config.stt_model_size,
-                device=self.config.stt_device,
-                compute_type=None,
-                language=None,
-                beam_size=5,
-                vad_filter=True,
-            )
+    def accepts_events_from(self, run_id: str) -> bool:
+        with self._lock:
+            return run_id == self._event_run_id
 
-            stt_desc = f"STT: requested={transcriber.requested_device}, actual={transcriber.actual_device}, sr={stream_cfg.sample_rate}"
-            self.on_status(f"Listening... ({stt_desc})")
-            last_dropped_frames = 0
-            for phrase in phrase_stream.iter_phrases(stop_event=self._stop_event):
-                if self._stop_event.is_set():
-                    break
-
-                stream_metrics = phrase_stream.metrics()
-                if stream_metrics.dropped_frames > last_dropped_frames:
-                    self.on_status(
-                        "Audio overload: "
-                        f"dropped_frames={stream_metrics.dropped_frames}, "
-                        f"queue_ms={stream_metrics.queue_ms}"
-                    )
-                last_dropped_frames = stream_metrics.dropped_frames
-
-                phrase_age_ms = max(
-                    0,
-                    int(round((time.monotonic() - phrase.ended_at) * 1000)),
-                )
-                self._process_phrase(
-                    phrase.pcm16,
-                    transcriber,
-                    stream_cfg.sample_rate,
-                    stt_desc,
-                    sd,
-                    sf,
-                    queue_ms=stream_metrics.queue_ms,
-                    phrase_age_ms=phrase_age_ms,
-                    dropped_frames=stream_metrics.dropped_frames,
-                )
-
-            self.on_status("Stopped")
-        except Exception as exc:
-            self.on_error(str(exc))
-            self.on_status("Stopped (error)")
-
-    def _process_phrase(
-        self,
-        phrase_pcm16,
-        transcriber,
-        sample_rate,
-        stt_desc,
-        sd,
-        sf,
-        *,
-        queue_ms: int = 0,
-        phrase_age_ms: int = 0,
-        dropped_frames: int = 0,
-    ) -> None:
-        stt_started = time.perf_counter()
-        try:
-            text = transcriber.transcribe_pcm16(phrase_pcm16, sample_rate=sample_rate)
-        except Exception as exc:
-            self.on_error(f"STT failed: {exc}")
+    def _terminate_if_alive(self, process) -> None:
+        with self._lock:
+            is_current = process is self._process
+        if not is_current or not process.is_alive():
             return
-        stt_ms = int(round((time.perf_counter() - stt_started) * 1000))
+        process.terminate()
+        self._schedule(1000, lambda: self._kill_if_alive(process))
 
-        if not text:
-            return
+    def _kill_if_alive(self, process) -> None:
+        with self._lock:
+            is_current = process is self._process
+        if is_current and process.is_alive():
+            process.kill()
 
-        self.on_text(text)
+    def _dispatch_event(self, event) -> None:
+        run_id, kind, payload = event
+        with self._lock:
+            if run_id != self._event_run_id:
+                return
 
-        fd, out_wav = tempfile.mkstemp(suffix=".wav")
-        os.close(fd)
-        try:
-            tts_started = time.perf_counter()
-            used_engine = synthesize_text(
-                text=text,
-                out_wav=out_wav,
-                auto_select=self.config.auto_tts_model,
-                manual_model=self.config.manual_tts_model,
-                tts_root=self.config.tts_root,
-            )
-            tts_ms = int(round((time.perf_counter() - tts_started) * 1000))
-            self.on_status(
-                f"Listening... ({stt_desc}, tts={used_engine}, "
-                f"stt_ms={stt_ms}, tts_ms={tts_ms}, queue_ms={queue_ms}, "
-                f"phrase_age_ms={phrase_age_ms}, "
-                f"dropped_frames={dropped_frames})"
-            )
-            data, fs = sf.read(out_wav, dtype="float32")
-            data, output_fs = prepare_audio_for_output(
-                sd,
-                data,
-                source_rate=fs,
-                device_index=self.config.output_device,
-            )
-            sd.play(data, output_fs, device=self.config.output_device)
-            sd.wait()
-        except Exception as exc:
-            self.on_error(f"TTS/Playback failed: {exc}")
-        finally:
-            if os.path.exists(out_wav):
-                os.remove(out_wav)
+        if kind in {"status", "text", "error", "warning", "state"}:
+            self.on_event(run_id, kind, payload)
 
-    @staticmethod
-    def _select_input_sample_rate(sd, device_index: Optional[int]) -> int:
-        try:
-            info = sd.query_devices(device_index, "input")
-            raw_sr = float(info.get("default_samplerate") or 16000.0)
-            default_sr = int(round(raw_sr)) if raw_sr > 0 else 16000
-            sd.check_input_settings(
-                device=device_index,
-                channels=1,
-                samplerate=default_sr,
-                dtype="float32",
-            )
-            return default_sr
-        except Exception:
-            default_sr = None
-
-        preferred_rates = [16000, 32000, 44100, 48000]
-        for sr in preferred_rates:
-            if sr == default_sr:
-                continue
+    def _monitor_worker(self, process, event_queue, run_id: str) -> None:
+        while True:
             try:
-                sd.check_input_settings(
-                    device=device_index,
-                    channels=1,
-                    samplerate=sr,
-                    dtype="float32",
-                )
-                return sr
-            except Exception:
+                event = event_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not process.is_alive():
+                    break
                 continue
+            except (EOFError, OSError):
+                break
+            else:
+                self._dispatch_event(event)
 
-        return default_sr or 16000
+            if not process.is_alive():
+                break
+
+        while True:
+            try:
+                self._dispatch_event(event_queue.get_nowait())
+            except queue.Empty:
+                break
+            except (EOFError, OSError):
+                break
+
+        process.join()
+        self._report_abnormal_exit(process, run_id)
+        self._finish_worker(process, event_queue)
+
+    def _report_abnormal_exit(self, process, run_id: str) -> None:
+        exitcode = process.exitcode
+        if exitcode in {None, 0}:
+            return
+        self._dispatch_event(
+            (
+                run_id,
+                "error",
+                f"Pipeline worker exited unexpectedly with code {exitcode}",
+            )
+        )
+
+    def _finish_worker(self, process, event_queue) -> None:
+        with self._lock:
+            if process is not self._process:
+                return
+            self._process = None
+            self._cancel_event = None
+            self._event_queue = None
+            self._active_run_id = None
+            self._monitor_thread = None
+
+        try:
+            event_queue.close()
+            event_queue.join_thread()
+        except Exception:
+            pass
+        try:
+            process.close()
+        except Exception:
+            pass
+        self.on_stopped()
+
+
+__all__ = ["RunConfig", "SpeechLoopRunner", "prepare_audio_for_output"]

@@ -17,6 +17,14 @@ Results:
 
 The script installs Python build dependencies, builds the native `ru_tts` backend, and runs PyInstaller.
 
+The executable includes the GigaAM/Whisper inference runtimes, but it does not
+embed model weights. Models are downloaded on first use to
+`%LOCALAPPDATA%\V2TTS\models` on Windows. Rebuilding the executable neither
+downloads nor packages that user cache.
+
+The frozen `--smoke-test` starts a spawned child process and exercises both
+packaged TTS engines. It does not load or download an STT model.
+
 ## Windows Installer
 
 Install Inno Setup 6, then run on Windows:

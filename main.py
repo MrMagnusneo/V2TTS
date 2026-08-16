@@ -1,15 +1,22 @@
 import importlib
+import multiprocessing
 import sys
 import tkinter as tk
 
 from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_audio_devices, parse_index_from_label
 from gui import AppGUI
-from stt import STT_DEVICES, STT_MODEL_SIZES
+from stt import STT_DEVICES
+from stt_profiles import STTSelection, validate_selection
 from tts import TTS_MODELS, prepare_runtime_tts_root
 
 
-RUNTIME_DEPENDENCIES = ("faster_whisper", "sounddevice", "soundfile")
+RUNTIME_DEPENDENCIES = (
+    "faster_whisper",
+    "onnx_asr",
+    "sounddevice",
+    "soundfile",
+)
 
 
 def check_runtime_dependencies() -> None:
@@ -33,6 +40,7 @@ class AppController:
         self.runner: SpeechLoopRunner | None = None
         self.input_map: dict[str, int] = {}
         self.output_map: dict[str, int] = {}
+        self._closing = False
 
         runtime_tts_root = prepare_runtime_tts_root()
 
@@ -40,13 +48,15 @@ class AppController:
         self.gui = AppGUI(
             root=self.root,
             stt_devices=STT_DEVICES,
-            stt_models=STT_MODEL_SIZES,
             tts_models=TTS_MODELS,
             default_tts_root=str(runtime_tts_root),
             on_refresh_devices=self.refresh_devices,
             on_start=self.start,
             on_stop=self.stop,
+            on_worker_stopped=self._runner_stopped,
+            is_run_current=self._is_run_current,
         )
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def refresh_devices(self) -> tuple[list[str], list[str]]:
         all_devices = list_audio_devices()
@@ -77,11 +87,17 @@ class AppController:
             settings["output_device_label"], self.output_map
         )
 
+        stt_selection = STTSelection(
+            language=settings["stt_language"],
+            engine=settings["stt_engine"],
+            model=settings["stt_model"],
+            device=settings["stt_device"],
+        )
+        validate_selection(stt_selection)
         config = RunConfig(
             input_device=input_idx,
             output_device=output_idx,
-            stt_device=settings["stt_device"],
-            stt_model_size=settings["stt_model_size"],
+            stt=stt_selection,
             auto_tts_model=settings["auto_tts_model"],
             manual_tts_model=settings["manual_tts_model"],
             tts_root=settings["tts_root"],
@@ -89,21 +105,50 @@ class AppController:
 
         self.runner = SpeechLoopRunner(
             config=config,
-            on_status=lambda msg: self.gui.enqueue_event("status", msg),
-            on_text=lambda msg: self.gui.enqueue_event("text", msg),
-            on_error=lambda msg: self.gui.enqueue_event("error", msg),
+            on_event=lambda run_id, kind, msg: self.gui.enqueue_event(
+                kind, msg, run_id
+            ),
+            on_stopped=lambda: self.gui.enqueue_event("worker_stopped", ""),
+            schedule=self.root.after,
         )
-        self.runner.start()
+        self.gui.set_pipeline_state("starting")
+        try:
+            self.runner.start()
+        except Exception:
+            self.runner = None
+            self.gui.set_pipeline_state("idle")
+            raise
 
     def stop(self) -> None:
         if self.runner:
+            self.gui.set_pipeline_state("stopping")
             self.runner.stop()
+
+    def _is_run_current(self, run_id: str) -> bool:
+        return bool(self.runner and self.runner.accepts_events_from(run_id))
+
+    def _runner_stopped(self) -> bool:
+        self.runner = None
+        if self._closing:
+            self.root.destroy()
+            return True
+        else:
+            self.gui.set_pipeline_state("idle")
+            return False
+
+    def close(self) -> None:
+        self._closing = True
+        if self.runner and self.runner.is_running():
+            self.stop()
+            return
+        self.root.destroy()
 
     def run(self) -> None:
         self.root.mainloop()
 
 
 def main(argv: list[str] | None = None) -> int:
+    multiprocessing.freeze_support()
     args = sys.argv[1:] if argv is None else argv
     check_runtime_dependencies()
 
