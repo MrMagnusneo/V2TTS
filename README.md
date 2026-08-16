@@ -72,7 +72,16 @@ sudo dnf install gcc portaudio portaudio-devel
 Windows:
 
 - Install Python 3.12+
-- Install a GCC toolchain such as MSYS2 MinGW-w64
+- Install MSYS2 and its UCRT64 GCC toolchain:
+
+```powershell
+winget install --id MSYS2.MSYS2 -e
+C:\msys64\usr\bin\bash.exe -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc"
+```
+
+The build script detects GCC in standard MSYS2 directories even when it is
+not yet present in `PATH`.
+
 - Optional installer build: install Inno Setup 6
 
 Python dependencies:
@@ -213,7 +222,16 @@ sudo dnf install gcc portaudio portaudio-devel
 Windows:
 
 - Установи Python 3.12+
-- Установи GCC toolchain, например MSYS2 MinGW-w64
+- Установи MSYS2 и GCC toolchain UCRT64:
+
+```powershell
+winget install --id MSYS2.MSYS2 -e
+C:\msys64\usr\bin\bash.exe -lc "pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc"
+```
+
+Скрипт сборки сам находит GCC в стандартных каталогах MSYS2, даже если путь
+к нему ещё не добавлен в `PATH`.
+
 - Для сборки установщика установи Inno Setup 6
 
 Python-зависимости:
