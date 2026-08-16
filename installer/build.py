@@ -14,6 +14,72 @@ SAM_ROOT = ROOT / "tts" / "sam-python"
 RU_TTS_ROOT = ROOT / "tts" / "ru_tts-python"
 
 
+def _default_gcc_candidates(platform: str) -> list[Path]:
+    if platform != "win32":
+        return []
+
+    roots = [
+        Path(os.environ.get("MSYS2_ROOT", r"C:\msys64")),
+        Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "chocolatey",
+        Path.home() / "scoop" / "apps" / "msys2" / "current",
+    ]
+    return [
+        roots[0] / "ucrt64" / "bin" / "gcc.exe",
+        roots[0] / "mingw64" / "bin" / "gcc.exe",
+        roots[1] / "bin" / "gcc.exe",
+        roots[2] / "ucrt64" / "bin" / "gcc.exe",
+        roots[2] / "mingw64" / "bin" / "gcc.exe",
+    ]
+
+
+def find_gcc(
+    path_env: str | None = None,
+    candidates: list[Path] | None = None,
+    platform: str = sys.platform,
+) -> Path | None:
+    compiler = shutil.which("gcc", path=path_env)
+    if compiler:
+        return Path(compiler)
+
+    search_candidates = (
+        _default_gcc_candidates(platform) if candidates is None else candidates
+    )
+    return next((candidate for candidate in search_candidates if candidate.is_file()), None)
+
+
+def ensure_gcc_available(
+    path_env: str | None = None,
+    candidates: list[Path] | None = None,
+    platform: str = sys.platform,
+) -> Path:
+    compiler = find_gcc(
+        path_env=path_env,
+        candidates=candidates,
+        platform=platform,
+    )
+    if compiler is None:
+        if platform == "win32":
+            raise RuntimeError(
+                "MinGW-w64 GCC is required to build the ru_tts native backend.\n"
+                "Install MSYS2 and GCC in PowerShell:\n"
+                "  winget install --id MSYS2.MSYS2 -e\n"
+                '  C:\\msys64\\usr\\bin\\bash.exe -lc "pacman -S --needed '
+                '--noconfirm mingw-w64-ucrt-x86_64-gcc"\n'
+                "Then rerun: python installer/build.py"
+            )
+        raise RuntimeError(
+            "GCC is required to build the ru_tts native backend. "
+            "Install gcc, then rerun: python installer/build.py"
+        )
+
+    compiler_dir = str(compiler.parent)
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    if compiler_dir not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([compiler_dir, *path_parts])
+    return compiler
+
+
 def run(cmd: list[str], cwd: Path = ROOT) -> None:
     print("+ " + " ".join(cmd))
     subprocess.run(cmd, cwd=str(cwd), check=True)
@@ -51,6 +117,8 @@ def prepare_tts_native(skip_native: bool) -> None:
     if skip_native:
         return
 
+    compiler = ensure_gcc_available()
+    print(f"Using GCC: {compiler}")
     ensure_local_packages_on_path()
 
     from ru_tts_python.build_nvda_backend import build_nvda_backend
