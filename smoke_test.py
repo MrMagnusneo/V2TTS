@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 import tempfile
 from pathlib import Path
 
@@ -13,7 +14,45 @@ SMOKE_CASES = (
 )
 
 
+def _multiprocessing_smoke_child(result_queue) -> None:
+    result_queue.put("ok")
+
+
+def run_multiprocessing_smoke() -> None:
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue()
+    process = context.Process(
+        target=_multiprocessing_smoke_child,
+        args=(result_queue,),
+        name="V2TTS-smoke-child",
+    )
+    try:
+        process.start()
+        process.join(timeout=10)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=2)
+            raise RuntimeError("Multiprocessing smoke child did not exit")
+        if process.exitcode != 0:
+            raise RuntimeError(
+                f"Multiprocessing smoke child exited with {process.exitcode}"
+            )
+        if result_queue.get(timeout=2) != "ok":
+            raise RuntimeError("Multiprocessing smoke child returned bad data")
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=2)
+        result_queue.close()
+        result_queue.join_thread()
+        try:
+            process.close()
+        except ValueError:
+            pass
+
+
 def run_packaged_smoke(tts_root: Path | None = None) -> int:
+    run_multiprocessing_smoke()
     soundfile = get_soundfile()
 
     with tempfile.TemporaryDirectory(prefix="v2tts-smoke-") as temp_dir:

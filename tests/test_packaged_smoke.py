@@ -8,6 +8,10 @@ import main
 import smoke_test
 
 
+def test_multiprocessing_smoke_round_trip() -> None:
+    assert smoke_test.run_multiprocessing_smoke() is None
+
+
 def test_smoke_synthesizes_and_decodes_both_tts_engines(tmp_path: Path) -> None:
     soundfile = MagicMock()
     soundfile.read.return_value = (np.array([0.1, -0.1]), 22050)
@@ -47,6 +51,7 @@ def test_smoke_rejects_empty_audio(tmp_path: Path) -> None:
 
 def test_main_smoke_mode_does_not_create_gui() -> None:
     with (
+        patch("main.multiprocessing.freeze_support") as freeze_support,
         patch("main.check_runtime_dependencies") as check_dependencies,
         patch("smoke_test.run_packaged_smoke", return_value=0) as run_smoke,
         patch("main.AppController") as app_controller,
@@ -54,5 +59,6 @@ def test_main_smoke_mode_does_not_create_gui() -> None:
         assert main.main(["--smoke-test"]) == 0
 
     check_dependencies.assert_called_once_with()
+    freeze_support.assert_called_once_with()
     run_smoke.assert_called_once_with()
     app_controller.assert_not_called()

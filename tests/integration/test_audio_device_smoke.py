@@ -4,8 +4,8 @@ import threading
 import pytest
 
 from audio_backend import get_sounddevice
-from audio_queue import SpeechLoopRunner
 from audio_stream import AudioPhraseStream, StreamConfig
+from pipeline import select_input_sample_rate
 
 
 pytestmark = pytest.mark.integration
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 )
 def test_default_input_device_delivers_bounded_audio_frames() -> None:
     sounddevice = get_sounddevice()
-    sample_rate = SpeechLoopRunner._select_input_sample_rate(sounddevice, None)
+    sample_rate = select_input_sample_rate(sounddevice, None)
     config = StreamConfig(sample_rate=sample_rate, frame_ms=20, max_buffer_ms=200)
     stream = AudioPhraseStream(config)
     stop_event = threading.Event()

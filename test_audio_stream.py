@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import numpy as np
+import pytest
 
 from audio_stream import AudioPhraseStream, FramePacket, StreamConfig
 
@@ -54,13 +55,13 @@ class TestAudioPhraseStream(unittest.TestCase):
         voice_frame = np.full(frame_size, 0.02, dtype=np.float32)
 
         # Put frames in queue:
-        # 1. Silence (ignored because not collecting)
+        # 1. Silence (kept as bounded pre-roll)
         # 2. Voice (starts collecting)
         # 3. Voice (collecting)
         # 4. Silence (collecting, silence count = 1)
         # 5. Silence (collecting, silence count = 2)
         # 6. Silence (collecting, silence count = 3 >= max_silence_ms/frame_ms (30/10=3))
-        # -> Should yield phrase (Voice, Voice, Silence, Silence, Silence)
+        # -> Should yield phrase (pre-roll silence, Voice, Voice, Silence x3)
         queued_frames = [
             silence_frame,
             voice_frame,
@@ -97,8 +98,17 @@ class TestAudioPhraseStream(unittest.TestCase):
             except StopIteration:
                 self.fail("iter_phrases did not yield a phrase")
 
-        # Expecting 2 voice frames + 3 silence frames = 5 frames of 10 samples = 50 samples
-        expected_audio = np.concatenate([voice_frame, voice_frame, silence_frame, silence_frame, silence_frame])
+        # Expecting 1 pre-roll + 2 voice + 3 trailing silence frames.
+        expected_audio = np.concatenate(
+            [
+                silence_frame,
+                voice_frame,
+                voice_frame,
+                silence_frame,
+                silence_frame,
+                silence_frame,
+            ]
+        )
         expected_pcm16 = (expected_audio * 32767.0).astype(np.int16)
 
         np.testing.assert_array_equal(result.pcm16, expected_pcm16)
@@ -141,6 +151,79 @@ class TestAudioPhraseStream(unittest.TestCase):
                 next(gen)
 
         self.assertEqual(call_count, 2)
+
+def test_phrase_includes_bounded_pre_roll() -> None:
+    config = StreamConfig(
+        sample_rate=1000,
+        frame_ms=100,
+        pre_roll_ms=200,
+        min_phrase_ms=100,
+        max_silence_ms=100,
+        start_threshold=0.5,
+        stop_threshold=0.2,
+    )
+    stream = AudioPhraseStream(config)
+    quiet_a = np.full(100, 0.1, dtype=np.float32)
+    quiet_b = np.full(100, 0.2, dtype=np.float32)
+    voice = np.full(100, 0.8, dtype=np.float32)
+    silence = np.zeros(100, dtype=np.float32)
+
+    assert stream._process_frame(quiet_a) is None
+    assert stream._process_frame(quiet_b) is None
+    assert stream._process_frame(voice) is None
+    result = stream._process_frame(silence)
+
+    assert result is not None
+    assert len(result) == 400
+    np.testing.assert_array_equal(
+        result[:100],
+        (quiet_a * 32767).astype(np.int16),
+    )
+    np.testing.assert_array_equal(
+        result[200:300],
+        (voice * 32767).astype(np.int16),
+    )
+
+
+def test_pre_roll_drops_frames_older_than_configured_window() -> None:
+    config = StreamConfig(
+        sample_rate=1000,
+        frame_ms=100,
+        pre_roll_ms=200,
+        start_threshold=0.5,
+    )
+    stream = AudioPhraseStream(config)
+
+    for level in (0.1, 0.2, 0.3):
+        stream._process_frame(np.full(100, level, dtype=np.float32))
+    stream._process_frame(np.full(100, 0.8, dtype=np.float32))
+
+    assert len(stream.phrase_frames) == 3
+    assert np.allclose(stream.phrase_frames[0], 0.2)
+
+
+def test_non_multiple_silence_duration_rounds_up() -> None:
+    stream = AudioPhraseStream(StreamConfig(frame_ms=30, max_silence_ms=700))
+
+    assert stream.silence_frames_limit == 24
+
+
+def test_input_error_includes_device_rate_and_channels() -> None:
+    sd = MagicMock()
+    sd.InputStream.side_effect = RuntimeError("Invalid device")
+    stream = AudioPhraseStream(
+        StreamConfig(sample_rate=44100, channels=1, device=3)
+    )
+
+    with patch("audio_stream.get_sounddevice", return_value=sd):
+        with pytest.raises(RuntimeError) as error:
+            next(stream.iter_phrases())
+
+    message = str(error.value)
+    assert "input device 3" in message
+    assert "44100 Hz" in message
+    assert "1 channel" in message
+
 
 if __name__ == '__main__':
     unittest.main()

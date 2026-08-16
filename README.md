@@ -4,16 +4,20 @@
 
 Desktop GUI app for a real-time `speech -> text -> speech` loop.
 
-- STT: `faster-whisper`
+- STT: local GigaAM v3 for Russian and `faster-whisper` for Russian/English
 - TTS: vendored Python `ru_tts` for Russian and vendored Python `sam` for English
 - GUI: `tkinter`
 - Packaging: one cross-platform Python build script
 
 ### Features
 
-- Start/stop from GUI, no command-line arguments required.
+- Start/stop from GUI, no command-line arguments required. `Stop` interrupts the
+  pipeline worker without closing the window.
+- Select an explicit `Russian` or `English` recognition profile.
 - Select STT device: `cpu` or `cuda`.
-- Select STT model size: `tiny`, `base`, `small`, `medium`, `large-v3`.
+- Russian default: GigaAM v3 E2E RNN-T. Russian alternatives: GigaAM v3 E2E
+  CTC and Whisper `small`, `medium`, or `large-v3`.
+- English: explicit-English Whisper `small`, `medium`, or `large-v3`.
 - Select audio input/output devices.
 - Auto TTS model selection by text language: Cyrillic -> `ru_tts`, Latin -> `sam`.
 - Manual TTS model override: `ru_tts` or `sam`.
@@ -23,8 +27,10 @@ Desktop GUI app for a real-time `speech -> text -> speech` loop.
 - `main.py` - app entry point and controller wiring.
 - `gui.py` - GUI widgets and UI events.
 - `audio_stream.py` - microphone stream and phrase segmentation.
-- `audio_queue.py` - runtime loop: `STT -> TTS -> playback`.
-- `stt.py` - Whisper transcription logic.
+- `audio_queue.py` - parent-side worker lifecycle and safe Stop escalation.
+- `pipeline.py` - child-owned `capture -> STT -> TTS -> playback` pipeline.
+- `stt_profiles.py` - language/engine/model catalog and model paths.
+- `stt.py` - GigaAM and Whisper transcription adapters.
 - `tts.py` - TTS routing through the vendored Python engines.
 - `devices.py` - audio device discovery helpers.
 - `audio_backend.py` - lazy audio backend imports.
@@ -96,6 +102,17 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
+The first use of a selected STT model downloads its weights. Later recognition
+can run offline. On Windows the files are stored outside the executable under:
+
+```text
+%LOCALAPPDATA%\V2TTS\models
+```
+
+The executable contains the inference runtimes, but no GigaAM or Whisper model
+weights. If CUDA initialization fails, the log shows the reason and the actual
+CPU fallback instead of silently changing devices.
+
 ### Build
 
 Build on the OS you want to distribute for. PyInstaller does not cross-compile.
@@ -127,8 +144,9 @@ Run the automated suite:
 python -m pytest -q
 ```
 
-The Windows workflow builds the frozen executable and runs the packaged TTS
-smoke check automatically. You can run the same check locally after a build:
+The Windows workflow builds the frozen executable and runs the packaged TTS plus
+multiprocessing smoke checks automatically. The smoke does not download an STT
+model. You can run the same check locally after a build:
 
 ```bash
 dist/V2TTS.exe --smoke-test
@@ -146,7 +164,8 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 - `OSError: PortAudio library not found`: install PortAudio and reinstall `sounddevice`.
 - CUDA DLL errors: select `cpu` in the GUI or install the CUDA runtime required by your `ctranslate2` build.
 - `gcc` not found during build: install GCC/MSYS2 MinGW-w64 and make sure it is in `PATH`.
-- Slow STT: use `tiny` or `base`, select `cpu` if CUDA is not configured correctly.
+- Slow STT: use GigaAM v3 E2E CTC for Russian or Whisper `small`; check the log
+  if requested CUDA fell back to CPU.
 
 ---
 
@@ -154,16 +173,21 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 
 Десктопное GUI-приложение для real-time конвейера `speech -> text -> speech`.
 
-- STT: `faster-whisper`
+- STT: локальный GigaAM v3 для русского и `faster-whisper` для русского/английского
 - TTS: vendored Python `ru_tts` для русского и vendored Python `sam` для английского
 - GUI: `tkinter`
 - Сборка: один кроссплатформенный Python-скрипт
 
 ### Возможности
 
-- Запуск/остановка из GUI, без аргументов командной строки.
+- Запуск/остановка из GUI, без аргументов командной строки. `Stop` прерывает
+  дочерний конвейер и не закрывает окно.
+- Отдельные профили распознавания `Russian` и `English`.
 - Выбор устройства STT: `cpu` или `cuda`.
-- Выбор размера STT-модели: `tiny`, `base`, `small`, `medium`, `large-v3`.
+- Русский профиль по умолчанию: GigaAM v3 E2E RNN-T. Также доступны GigaAM v3
+  E2E CTC и Whisper `small`, `medium`, `large-v3`.
+- Английский профиль: Whisper `small`, `medium`, `large-v3` с явно заданным
+  английским языком.
 - Выбор устройств ввода/вывода аудио.
 - Автовыбор TTS по языку текста: кириллица -> `ru_tts`, латиница -> `sam`.
 - Ручной выбор TTS: `ru_tts` или `sam`.
@@ -173,8 +197,10 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 - `main.py` - точка входа и связывание компонентов.
 - `gui.py` - виджеты GUI и события UI.
 - `audio_stream.py` - поток микрофона и разбиение на фразы.
-- `audio_queue.py` - runtime-цикл: `STT -> TTS -> playback`.
-- `stt.py` - логика Whisper.
+- `audio_queue.py` - управление дочерним процессом и безопасным Stop.
+- `pipeline.py` - дочерний конвейер `capture -> STT -> TTS -> playback`.
+- `stt_profiles.py` - каталог языков, движков, моделей и пути к весам.
+- `stt.py` - адаптеры GigaAM и Whisper.
 - `tts.py` - роутинг TTS через vendored Python-движки.
 - `devices.py` - поиск аудиоустройств.
 - `audio_backend.py` - ленивые импорты аудио-бэкенда.
@@ -246,6 +272,17 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
+При первом выборе STT-модели её веса скачиваются автоматически. После загрузки
+распознавание может работать без интернета. В Windows веса хранятся отдельно от
+`.exe`:
+
+```text
+%LOCALAPPDATA%\V2TTS\models
+```
+
+В `.exe` находятся только runtime-компоненты, но не веса GigaAM/Whisper. Если
+CUDA не запускается, причина и фактически выбранный CPU отображаются в журнале.
+
 ### Сборка
 
 Собирать нужно на той ОС, под которую нужен бинарник. PyInstaller не делает cross-compile.
@@ -278,7 +315,8 @@ python -m pytest -q
 ```
 
 Windows workflow собирает frozen executable и автоматически запускает smoke-тест
-упакованных TTS-движков. Тот же тест можно запустить локально после сборки:
+упакованных TTS-движков и дочернего процесса. STT-модели при этом не скачиваются.
+Тот же тест можно запустить локально после сборки:
 
 ```bash
 dist/V2TTS.exe --smoke-test
@@ -296,4 +334,5 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 - `OSError: PortAudio library not found`: установи PortAudio и переустанови `sounddevice`.
 - Ошибки CUDA DLL: выбери `cpu` в GUI или установи CUDA runtime, который нужен твоей сборке `ctranslate2`.
 - `gcc` не найден при сборке: установи GCC/MSYS2 MinGW-w64 и добавь его в `PATH`.
-- STT работает медленно: используй `tiny` или `base`, выбирай `cpu`, если CUDA настроена некорректно.
+- STT работает медленно: для русского выбери GigaAM v3 E2E CTC или Whisper
+  `small`; проверь журнал — возможно, CUDA переключилась на CPU.

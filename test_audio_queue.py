@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock
-from audio_queue import SpeechLoopRunner
+from pipeline import select_input_sample_rate
 
 class TestSelectInputSampleRate(unittest.TestCase):
     def setUp(self):
@@ -11,7 +11,7 @@ class TestSelectInputSampleRate(unittest.TestCase):
         self.sd_mock.check_input_settings.return_value = None
         self.sd_mock.query_devices.return_value = {"default_samplerate": 16000.0}
 
-        rate = SpeechLoopRunner._select_input_sample_rate(self.sd_mock, device_index=1)
+        rate = select_input_sample_rate(self.sd_mock, device_index=1)
 
         self.assertEqual(rate, 16000)
         self.sd_mock.check_input_settings.assert_called_once_with(
@@ -29,7 +29,7 @@ class TestSelectInputSampleRate(unittest.TestCase):
         self.sd_mock.check_input_settings.side_effect = check_input_settings_side_effect
         self.sd_mock.query_devices.return_value = {"default_samplerate": 16000.0}
 
-        rate = SpeechLoopRunner._select_input_sample_rate(self.sd_mock, device_index=1)
+        rate = select_input_sample_rate(self.sd_mock, device_index=1)
 
         self.assertEqual(rate, 32000)
         self.assertEqual(self.sd_mock.check_input_settings.call_count, 3)
@@ -45,7 +45,7 @@ class TestSelectInputSampleRate(unittest.TestCase):
         self.sd_mock.check_input_settings.side_effect = check_input_settings_side_effect
         self.sd_mock.query_devices.return_value = {"default_samplerate": 22050.0}
 
-        rate = SpeechLoopRunner._select_input_sample_rate(self.sd_mock, device_index=1)
+        rate = select_input_sample_rate(self.sd_mock, device_index=1)
 
         self.assertEqual(rate, 22050)
         self.assertEqual(self.sd_mock.check_input_settings.call_count, 1)
@@ -58,7 +58,7 @@ class TestSelectInputSampleRate(unittest.TestCase):
         # query_devices returns dict without default_samplerate
         self.sd_mock.query_devices.return_value = {}
 
-        rate = SpeechLoopRunner._select_input_sample_rate(self.sd_mock, device_index=1)
+        rate = select_input_sample_rate(self.sd_mock, device_index=1)
 
         self.assertEqual(rate, 16000)
         self.assertEqual(self.sd_mock.check_input_settings.call_count, 5)
@@ -71,7 +71,7 @@ class TestSelectInputSampleRate(unittest.TestCase):
         # query_devices returns zero or negative default_samplerate
         self.sd_mock.query_devices.return_value = {"default_samplerate": -1.0}
 
-        rate = SpeechLoopRunner._select_input_sample_rate(self.sd_mock, device_index=1)
+        rate = select_input_sample_rate(self.sd_mock, device_index=1)
 
         self.assertEqual(rate, 16000)
         self.assertEqual(self.sd_mock.check_input_settings.call_count, 5)

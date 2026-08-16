@@ -2,6 +2,7 @@ import math
 import queue
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Generator, Optional
 
@@ -20,6 +21,7 @@ class StreamConfig:
     min_phrase_ms: int = 300
     max_silence_ms: int = 700
     max_buffer_ms: int = 1500
+    pre_roll_ms: int = 200
     device: Optional[int] = None
 
 
@@ -57,11 +59,20 @@ class AudioPhraseStream:
         )
         self._dropped_frames = 0
         self._callback_statuses = 0
-        self.silence_frames_limit = max(1, self.config.max_silence_ms // self.config.frame_ms)
+        self.silence_frames_limit = max(
+            1,
+            math.ceil(self.config.max_silence_ms / self.config.frame_ms),
+        )
         self.min_frames = max(1, self.config.min_phrase_ms // self.config.frame_ms)
         self.collecting = False
         self.silence_frames = 0
         self.phrase_frames = []
+        self._pre_roll = deque(
+            maxlen=max(
+                0,
+                math.ceil(self.config.pre_roll_ms / self.config.frame_ms),
+            )
+        )
 
     def _callback(self, indata, frames, time_info, status):
         if status:
@@ -96,7 +107,10 @@ class AudioPhraseStream:
             if rms >= self.config.start_threshold:
                 self.collecting = True
                 self.silence_frames = 0
-                self.phrase_frames = [frame]
+                self.phrase_frames = [*self._pre_roll, frame]
+                self._pre_roll.clear()
+            else:
+                self._pre_roll.append(frame)
             return None
 
         self.phrase_frames.append(frame)
@@ -117,6 +131,7 @@ class AudioPhraseStream:
             self.collecting = False
             self.silence_frames = 0
             self.phrase_frames = []
+            self._pre_roll.clear()
 
             return pcm16
 
@@ -129,26 +144,33 @@ class AudioPhraseStream:
         sd = get_sounddevice()
         frame_samples = int(self.config.sample_rate * self.config.frame_ms / 1000)
 
-        with sd.InputStream(
-            samplerate=self.config.sample_rate,
-            channels=self.config.channels,
-            dtype="float32",
-            blocksize=frame_samples,
-            device=self.config.device,
-            callback=self._callback,
-        ):
-            while True:
-                if stop_event is not None and stop_event.is_set():
-                    return
+        try:
+            with sd.InputStream(
+                samplerate=self.config.sample_rate,
+                channels=self.config.channels,
+                dtype="float32",
+                blocksize=frame_samples,
+                device=self.config.device,
+                callback=self._callback,
+            ):
+                while True:
+                    if stop_event is not None and stop_event.is_set():
+                        return
 
-                try:
-                    packet = self._frames_q.get(timeout=0.1)
-                except queue.Empty:
-                    continue
+                    try:
+                        packet = self._frames_q.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
 
-                pcm16 = self._process_frame(packet.samples)
-                if pcm16 is not None:
-                    yield CapturedPhrase(
-                        pcm16=pcm16,
-                        ended_at=packet.captured_at,
-                    )
+                    pcm16 = self._process_frame(packet.samples)
+                    if pcm16 is not None:
+                        yield CapturedPhrase(
+                            pcm16=pcm16,
+                            ended_at=packet.captured_at,
+                        )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not use input device {self.config.device} at "
+                f"{self.config.sample_rate} Hz with "
+                f"{self.config.channels} channel(s): {exc}"
+            ) from exc
