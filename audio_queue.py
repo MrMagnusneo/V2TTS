@@ -1,6 +1,7 @@
 import os
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -79,17 +80,34 @@ class SpeechLoopRunner:
 
             stt_desc = f"STT: requested={transcriber.requested_device}, actual={transcriber.actual_device}, sr={stream_cfg.sample_rate}"
             self.on_status(f"Listening... ({stt_desc})")
-            for phrase_pcm16 in phrase_stream.iter_phrases(stop_event=self._stop_event):
+            last_dropped_frames = 0
+            for phrase in phrase_stream.iter_phrases(stop_event=self._stop_event):
                 if self._stop_event.is_set():
                     break
 
+                stream_metrics = phrase_stream.metrics()
+                if stream_metrics.dropped_frames > last_dropped_frames:
+                    self.on_status(
+                        "Audio overload: "
+                        f"dropped_frames={stream_metrics.dropped_frames}, "
+                        f"queue_ms={stream_metrics.queue_ms}"
+                    )
+                last_dropped_frames = stream_metrics.dropped_frames
+
+                phrase_age_ms = max(
+                    0,
+                    int(round((time.monotonic() - phrase.ended_at) * 1000)),
+                )
                 self._process_phrase(
-                    phrase_pcm16,
+                    phrase.pcm16,
                     transcriber,
                     stream_cfg.sample_rate,
                     stt_desc,
                     sd,
                     sf,
+                    queue_ms=stream_metrics.queue_ms,
+                    phrase_age_ms=phrase_age_ms,
+                    dropped_frames=stream_metrics.dropped_frames,
                 )
 
             self.on_status("Stopped")
@@ -97,12 +115,26 @@ class SpeechLoopRunner:
             self.on_error(str(exc))
             self.on_status("Stopped (error)")
 
-    def _process_phrase(self, phrase_pcm16, transcriber, sample_rate, stt_desc, sd, sf) -> None:
+    def _process_phrase(
+        self,
+        phrase_pcm16,
+        transcriber,
+        sample_rate,
+        stt_desc,
+        sd,
+        sf,
+        *,
+        queue_ms: int = 0,
+        phrase_age_ms: int = 0,
+        dropped_frames: int = 0,
+    ) -> None:
+        stt_started = time.perf_counter()
         try:
             text = transcriber.transcribe_pcm16(phrase_pcm16, sample_rate=sample_rate)
         except Exception as exc:
             self.on_error(f"STT failed: {exc}")
             return
+        stt_ms = int(round((time.perf_counter() - stt_started) * 1000))
 
         if not text:
             return
@@ -112,6 +144,7 @@ class SpeechLoopRunner:
         fd, out_wav = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
         try:
+            tts_started = time.perf_counter()
             used_engine = synthesize_text(
                 text=text,
                 out_wav=out_wav,
@@ -119,7 +152,13 @@ class SpeechLoopRunner:
                 manual_model=self.config.manual_tts_model,
                 tts_root=self.config.tts_root,
             )
-            self.on_status(f"Listening... ({stt_desc}, tts={used_engine})")
+            tts_ms = int(round((time.perf_counter() - tts_started) * 1000))
+            self.on_status(
+                f"Listening... ({stt_desc}, tts={used_engine}, "
+                f"stt_ms={stt_ms}, tts_ms={tts_ms}, queue_ms={queue_ms}, "
+                f"phrase_age_ms={phrase_age_ms}, "
+                f"dropped_frames={dropped_frames})"
+            )
             data, fs = sf.read(out_wav, dtype="float32")
             sd.play(data, fs, device=self.config.output_device)
             sd.wait()

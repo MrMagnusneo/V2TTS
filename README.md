@@ -110,6 +110,28 @@ Result:
 
 - `dist-installer/V2TTS-Setup.exe`
 
+### Tests
+
+Run the automated suite:
+
+```bash
+python -m pytest -q
+```
+
+The Windows workflow builds the frozen executable and runs the packaged TTS
+smoke check automatically. You can run the same check locally after a build:
+
+```bash
+dist/V2TTS.exe --smoke-test
+```
+
+The hardware test is deliberately opt-in because CI runners do not expose a
+real microphone:
+
+```bash
+V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
+```
+
 ### Troubleshooting
 
 - `OSError: PortAudio library not found`: install PortAudio and reinstall `sounddevice`.
@@ -228,6 +250,28 @@ python installer/build.py --installer
 Результат:
 
 - `dist-installer/V2TTS-Setup.exe`
+
+### Тесты
+
+Запуск автоматических тестов:
+
+```bash
+python -m pytest -q
+```
+
+Windows workflow собирает frozen executable и автоматически запускает smoke-тест
+упакованных TTS-движков. Тот же тест можно запустить локально после сборки:
+
+```bash
+dist/V2TTS.exe --smoke-test
+```
+
+Тест реального аудиоустройства включается явно, потому что у CI runner нет
+настоящего микрофона:
+
+```bash
+V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
+```
 
 ### Решение Проблем
 

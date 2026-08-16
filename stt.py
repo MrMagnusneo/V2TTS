@@ -2,7 +2,8 @@ from typing import Optional
 import os
 
 import numpy as np
-from faster_whisper import WhisperModel
+
+WhisperModel = None
 
 STT_MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3"]
 STT_DEVICES = ["cpu", "cuda"]
@@ -24,6 +25,12 @@ class WhisperTranscriber:
         beam_size: int = 5,
         vad_filter: bool = True,
     ):
+        global WhisperModel
+        if WhisperModel is None:
+            from faster_whisper import WhisperModel as whisper_model_class
+
+            WhisperModel = whisper_model_class
+
         if compute_type is None:
             compute_type = default_compute_type(device)
         self.requested_device = device
