@@ -25,5 +25,13 @@ def test_pyinstaller_collects_onnx_asr_without_model_weights() -> None:
 
     assert 'collect_submodules("onnx_asr")' in spec
     assert 'collect_data_files("onnx_asr")' in spec
+    assert 'copy_metadata("onnx-asr")' in spec
     assert 'collect_dynamic_libs("onnxruntime")' in spec
     assert "gigaam-v3-e2e-rnnt" not in spec
+
+
+def test_windows_frozen_build_matches_supported_python_313() -> None:
+    workflow = Path(".github/workflows/windows-frozen-smoke.yml")
+    contents = workflow.read_text(encoding="utf-8")
+
+    assert 'python-version: "3.13"' in contents

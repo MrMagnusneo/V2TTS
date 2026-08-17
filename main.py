@@ -20,15 +20,19 @@ RUNTIME_DEPENDENCIES = (
 
 
 def check_runtime_dependencies() -> None:
-    unavailable: list[str] = []
+    unavailable: list[tuple[str, str]] = []
     for package in RUNTIME_DEPENDENCIES:
         try:
             importlib.import_module(package)
-        except Exception:
-            unavailable.append(package)
+        except Exception as exc:
+            unavailable.append(
+                (package, f"{type(exc).__name__}: {exc}")
+            )
 
     if unavailable:
-        packages = ", ".join(unavailable)
+        packages = "; ".join(
+            f"{package} ({reason})" for package, reason in unavailable
+        )
         raise RuntimeError(
             f"Missing or unusable runtime dependencies: {packages}. "
             "Install them with: python -m pip install -r requirements.txt"

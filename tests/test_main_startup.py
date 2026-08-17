@@ -43,8 +43,10 @@ def test_dependency_check_requires_onnx_asr() -> None:
         return object()
 
     with patch("main.importlib.import_module", side_effect=import_dependency):
-        with pytest.raises(RuntimeError, match="onnx_asr"):
+        with pytest.raises(RuntimeError, match="onnx_asr") as error:
             main.check_runtime_dependencies()
+
+    assert "missing onnx_asr" in str(error.value)
 
 
 def test_controller_builds_complete_stt_selection() -> None:
