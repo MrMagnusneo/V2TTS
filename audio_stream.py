@@ -141,6 +141,18 @@ class AudioPhraseStream:
         self,
         stop_event: Optional[threading.Event] = None,
     ) -> Generator[CapturedPhrase, None, None]:
+        for packet in self.iter_frames(stop_event=stop_event):
+            pcm16 = self._process_frame(packet.samples)
+            if pcm16 is not None:
+                yield CapturedPhrase(
+                    pcm16=pcm16,
+                    ended_at=packet.captured_at,
+                )
+
+    def iter_frames(
+        self,
+        stop_event: Optional[threading.Event] = None,
+    ) -> Generator[FramePacket, None, None]:
         sd = get_sounddevice()
         frame_samples = int(self.config.sample_rate * self.config.frame_ms / 1000)
 
@@ -161,13 +173,7 @@ class AudioPhraseStream:
                         packet = self._frames_q.get(timeout=0.1)
                     except queue.Empty:
                         continue
-
-                    pcm16 = self._process_frame(packet.samples)
-                    if pcm16 is not None:
-                        yield CapturedPhrase(
-                            pcm16=pcm16,
-                            ended_at=packet.captured_at,
-                        )
+                    yield packet
         except Exception as exc:
             raise RuntimeError(
                 f"Could not use input device {self.config.device} at "

@@ -1,8 +1,8 @@
 import os
 import tempfile
 import time
-from dataclasses import dataclass
-from typing import Callable, Optional
+from dataclasses import dataclass, field
+from typing import Callable, Literal, Optional
 
 import numpy as np
 
@@ -10,7 +10,12 @@ from audio_backend import get_sounddevice, get_soundfile
 from audio_stream import AudioPhraseStream, StreamConfig
 from runtime_support import ensure_standard_streams
 from stt import Transcriber, create_transcriber, is_stt_model_ready
-from stt_profiles import STTSelection
+from streaming_pipeline import StreamingInitializationError, run_streaming_pipeline
+from stt_profiles import (
+    STTSelection,
+    StreamingSTTSelection,
+    default_streaming_selection,
+)
 from tts import synthesize_text
 
 
@@ -25,6 +30,16 @@ class RunConfig:
     auto_tts_model: bool
     manual_tts_model: str
     tts_root: Optional[str]
+    stt_mode: Literal["streaming", "after_phrase"] = "after_phrase"
+    streaming_stt: StreamingSTTSelection = field(
+        default_factory=default_streaming_selection
+    )
+
+
+@dataclass(frozen=True)
+class SynthesisMetrics:
+    engine: str
+    tts_ms: int
 
 
 def prepare_audio_for_output(
@@ -181,6 +196,56 @@ def select_input_sample_rate(sd, device_index: Optional[int]) -> int:
     return default_rate or 16000
 
 
+def synthesize_and_play_text(
+    text: str,
+    sd,
+    sf,
+    config: RunConfig,
+    cancel_event,
+    *,
+    on_ready: Optional[Callable[[SynthesisMetrics], None]] = None,
+) -> Optional[SynthesisMetrics]:
+    file_descriptor, output_wav = tempfile.mkstemp(suffix=".wav")
+    os.close(file_descriptor)
+    try:
+        tts_started = time.perf_counter()
+        used_engine = synthesize_text(
+            text=text,
+            out_wav=output_wav,
+            auto_select=config.auto_tts_model,
+            manual_model=config.manual_tts_model,
+            tts_root=config.tts_root,
+        )
+        tts_ms = int(round((time.perf_counter() - tts_started) * 1000))
+        if cancel_event.is_set():
+            return None
+
+        data, source_rate = sf.read(output_wav, dtype="float32")
+        data, output_rate = prepare_audio_for_output(
+            sd,
+            data,
+            source_rate=source_rate,
+            device_index=config.output_device,
+        )
+        if cancel_event.is_set():
+            return None
+
+        metrics = SynthesisMetrics(engine=used_engine, tts_ms=tts_ms)
+        if on_ready is not None:
+            on_ready(metrics)
+        play_audio_cancellable(
+            sd,
+            data,
+            output_rate,
+            config.output_device,
+            cancel_event,
+        )
+        return metrics
+    finally:
+        if os.path.exists(output_wav):
+            os.remove(output_wav)
+
+
 def _process_phrase(
     phrase_pcm16: np.ndarray,
     transcriber: Transcriber,
@@ -214,54 +279,27 @@ def _process_phrase(
     if stop_event.is_set():
         return
 
-    file_descriptor, output_wav = tempfile.mkstemp(suffix=".wav")
-    os.close(file_descriptor)
     try:
-        tts_started = time.perf_counter()
-        used_engine = synthesize_text(
-            text=text,
-            out_wav=output_wav,
-            auto_select=config.auto_tts_model,
-            manual_model=config.manual_tts_model,
-            tts_root=config.tts_root,
-        )
-        tts_ms = int(round((time.perf_counter() - tts_started) * 1000))
-        if stop_event.is_set():
-            return
-
-        data, source_rate = sf.read(output_wav, dtype="float32")
-        data, output_rate = prepare_audio_for_output(
+        synthesize_and_play_text(
+            text,
             sd,
-            data,
-            source_rate=source_rate,
-            device_index=config.output_device,
-        )
-        if stop_event.is_set():
-            return
-
-        emit(
-            "status",
-            f"Listening... ({stt_description}, tts={used_engine}, "
-            f"stt_ms={stt_ms}, tts_ms={tts_ms}, queue_ms={queue_ms}, "
-            f"phrase_age_ms={phrase_age_ms}, "
-            f"dropped_frames={dropped_frames})",
-        )
-        play_audio_cancellable(
-            sd,
-            data,
-            output_rate,
-            config.output_device,
+            sf,
+            config,
             stop_event,
+            on_ready=lambda metrics: emit(
+                "status",
+                f"Listening... ({stt_description}, tts={metrics.engine}, "
+                f"stt_ms={stt_ms}, tts_ms={metrics.tts_ms}, "
+                f"queue_ms={queue_ms}, phrase_age_ms={phrase_age_ms}, "
+                f"dropped_frames={dropped_frames})",
+            ),
         )
     except Exception as exc:
         if not stop_event.is_set():
             emit("error", f"TTS/Playback failed: {exc}")
-    finally:
-        if os.path.exists(output_wav):
-            os.remove(output_wav)
 
 
-def run_pipeline(
+def run_phrase_pipeline(
     config: RunConfig,
     stop_event,
     emit: EmitCallback,
@@ -332,6 +370,28 @@ def run_pipeline(
 
     if not stop_event.is_set():
         emit("status", "Stopped")
+
+
+def run_pipeline(
+    config: RunConfig,
+    stop_event,
+    emit: EmitCallback,
+) -> None:
+    if config.stt_mode == "after_phrase":
+        return run_phrase_pipeline(config, stop_event, emit)
+    if config.stt_mode != "streaming":
+        raise ValueError(f"Unknown STT mode: {config.stt_mode}")
+    try:
+        return run_streaming_pipeline(config, stop_event, emit)
+    except StreamingInitializationError as exc:
+        if stop_event.is_set():
+            return
+        emit(
+            "warning",
+            "Streaming STT unavailable; using after-phrase mode: "
+            f"{exc}",
+        )
+        return run_phrase_pipeline(config, stop_event, emit)
 
 
 def pipeline_process_main(

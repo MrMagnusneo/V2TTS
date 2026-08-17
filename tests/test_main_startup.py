@@ -4,7 +4,7 @@ import pytest
 
 import main
 from main import AppController
-from stt_profiles import STTSelection
+from stt_profiles import STTSelection, StreamingSTTSelection
 
 
 def test_dependency_check_fails_with_install_instructions() -> None:
@@ -49,6 +49,16 @@ def test_dependency_check_requires_onnx_asr() -> None:
     assert "missing onnx_asr" in str(error.value)
 
 
+def test_dependency_check_keeps_sherpa_optional_for_after_phrase_mode() -> None:
+    def import_dependency(name: str) -> object:
+        if name == "sherpa_onnx":
+            raise ImportError("missing sherpa runtime")
+        return object()
+
+    with patch("main.importlib.import_module", side_effect=import_dependency):
+        main.check_runtime_dependencies()
+
+
 def test_controller_builds_complete_stt_selection() -> None:
     controller = object.__new__(AppController)
     controller.runner = None
@@ -57,6 +67,9 @@ def test_controller_builds_complete_stt_selection() -> None:
     controller.root = MagicMock()
     controller.gui = MagicMock()
     settings = {
+        "stt_mode": "streaming",
+        "streaming_language": "ru",
+        "streaming_profile": "sherpa_streaming_ru_t_one",
         "stt_language": "ru",
         "stt_engine": "gigaam",
         "stt_model": "gigaam-v3-e2e-rnnt",
@@ -68,7 +81,10 @@ def test_controller_builds_complete_stt_selection() -> None:
         "tts_root": None,
     }
 
-    with patch("main.SpeechLoopRunner") as runner_class:
+    with (
+        patch("main.SpeechLoopRunner") as runner_class,
+        patch("main.save_app_settings") as save_settings,
+    ):
         controller.start(settings)
 
     config = runner_class.call_args.kwargs["config"]
@@ -78,8 +94,13 @@ def test_controller_builds_complete_stt_selection() -> None:
         "gigaam-v3-e2e-rnnt",
         "cpu",
     )
+    assert config.stt_mode == "streaming"
+    assert config.streaming_stt == StreamingSTTSelection(
+        "ru", "sherpa_streaming_ru_t_one"
+    )
     assert runner_class.call_args.kwargs["schedule"] is controller.root.after
     runner_class.return_value.start.assert_called_once()
+    save_settings.assert_called_once_with(settings)
 
 
 def test_window_close_stops_worker_before_destroying_root() -> None:

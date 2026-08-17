@@ -4,7 +4,7 @@
 
 Desktop GUI app for a real-time `speech -> text -> speech` loop.
 
-- STT: local GigaAM v3 for Russian and `faster-whisper` for Russian/English
+- STT: local streaming `sherpa-onnx`, GigaAM v3, and `faster-whisper`
 - TTS: vendored Python `ru_tts` for Russian and vendored Python `sam` for English
 - GUI: `tkinter`
 - Packaging: one cross-platform Python build script
@@ -13,7 +13,10 @@ Desktop GUI app for a real-time `speech -> text -> speech` loop.
 
 - Start/stop from GUI, no command-line arguments required. `Stop` interrupts the
   pipeline worker without closing the window.
+- Streaming recognition is the default: stable text chunks can reach TTS before
+  the speaker finishes. `After phrase` keeps the original whole-phrase mode.
 - Select an explicit `Russian` or `English` recognition profile.
+- Streaming Russian uses T-One CTC; streaming English uses Zipformer 20M.
 - Select STT device: `cpu` or `cuda`.
 - Russian default: GigaAM v3 E2E RNN-T. Russian alternatives: GigaAM v3 E2E
   CTC and Whisper `small`, `medium`, or `large-v3`.
@@ -29,6 +32,8 @@ Desktop GUI app for a real-time `speech -> text -> speech` loop.
 - `audio_stream.py` - microphone stream and phrase segmentation.
 - `audio_queue.py` - parent-side worker lifecycle and safe Stop escalation.
 - `pipeline.py` - child-owned `capture -> STT -> TTS -> playback` pipeline.
+- `streaming_pipeline.py` - online STT and cancellable chunked TTS pipeline.
+- `streaming_models.py` - verified external streaming model installer.
 - `stt_profiles.py` - language/engine/model catalog and model paths.
 - `stt.py` - GigaAM and Whisper transcription adapters.
 - `tts.py` - TTS routing through the vendored Python engines.
@@ -102,16 +107,25 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-The first use of a selected STT model downloads its weights. Later recognition
-can run offline. On Windows the files are stored outside the executable under:
+The first use of a selected STT model downloads its weights. The streaming
+Russian archive is 128,468,156 bytes and the English archive is 127,887,156
+bytes. Downloads are SHA-256 verified, extracted safely, and installed
+atomically. Later recognition can run offline. On Windows streaming models are
+stored outside the executable under:
 
 ```text
-%LOCALAPPDATA%\V2TTS\models
+%LOCALAPPDATA%\V2TTS\models\sherpa-onnx\<profile-id>
 ```
 
-The executable contains the inference runtimes, but no GigaAM or Whisper model
-weights. If CUDA initialization fails, the log shows the reason and the actual
-CPU fallback instead of silently changing devices.
+The executable contains inference runtimes, but no streaming, GigaAM, or Whisper
+model weights. If streaming initialization fails, the log shows a warning and
+the app falls back to the selected same-language `After phrase` profile. If CUDA
+initialization fails, the log shows the reason and the actual CPU fallback.
+
+Streaming targets roughly 1–2 seconds before stable text is spoken; actual
+latency also depends on the chosen TTS engine and the computer. New speech
+interrupts obsolete queued/playback chunks. `Stop` cancels capture, model
+download, recognition, synthesis, and playback without closing the GUI.
 
 ### Build
 
@@ -159,6 +173,18 @@ real microphone:
 V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 ```
 
+An audio-device-free real streaming-model test accepts a speech WAV and is also
+opt-in. It uses an already installed model unless downloads are explicitly
+allowed:
+
+```bash
+V2TTS_STREAMING_MODEL_TEST=1 \
+V2TTS_STREAMING_TEST_WAV=/path/to/speech.wav \
+V2TTS_STREAMING_PROFILE=sherpa_streaming_ru_t_one \
+V2TTS_ALLOW_MODEL_DOWNLOAD=1 \
+python -m pytest tests/integration/test_streaming_model_smoke.py -q
+```
+
 ### Troubleshooting
 
 - `OSError: PortAudio library not found`: install PortAudio and reinstall `sounddevice`.
@@ -173,7 +199,7 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 
 Десктопное GUI-приложение для real-time конвейера `speech -> text -> speech`.
 
-- STT: локальный GigaAM v3 для русского и `faster-whisper` для русского/английского
+- STT: локальный потоковый `sherpa-onnx`, GigaAM v3 и `faster-whisper`
 - TTS: vendored Python `ru_tts` для русского и vendored Python `sam` для английского
 - GUI: `tkinter`
 - Сборка: один кроссплатформенный Python-скрипт
@@ -182,7 +208,10 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 
 - Запуск/остановка из GUI, без аргументов командной строки. `Stop` прерывает
   дочерний конвейер и не закрывает окно.
+- Потоковый режим включён по умолчанию: стабильные фрагменты передаются в TTS
+  ещё до конца речи. `После фразы` сохраняет прежний режим целой фразы.
 - Отдельные профили распознавания `Russian` и `English`.
+- Для потокового русского используется T-One CTC, для английского — Zipformer 20M.
 - Выбор устройства STT: `cpu` или `cuda`.
 - Русский профиль по умолчанию: GigaAM v3 E2E RNN-T. Также доступны GigaAM v3
   E2E CTC и Whisper `small`, `medium`, `large-v3`.
@@ -199,6 +228,8 @@ V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
 - `audio_stream.py` - поток микрофона и разбиение на фразы.
 - `audio_queue.py` - управление дочерним процессом и безопасным Stop.
 - `pipeline.py` - дочерний конвейер `capture -> STT -> TTS -> playback`.
+- `streaming_pipeline.py` - потоковый STT и прерываемый фрагментированный TTS.
+- `streaming_models.py` - проверенная установка внешних потоковых моделей.
 - `stt_profiles.py` - каталог языков, движков, моделей и пути к весам.
 - `stt.py` - адаптеры GigaAM и Whisper.
 - `tts.py` - роутинг TTS через vendored Python-движки.
@@ -272,16 +303,25 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-При первом выборе STT-модели её веса скачиваются автоматически. После загрузки
-распознавание может работать без интернета. В Windows веса хранятся отдельно от
-`.exe`:
+При первом выборе STT-модели её веса скачиваются автоматически. Архив русской
+потоковой модели занимает 128 468 156 байт, английской — 127 887 156 байт.
+Загрузка проверяется по SHA-256, безопасно распаковывается и атомарно
+устанавливается. После этого распознавание может работать без интернета. В
+Windows потоковые модели хранятся отдельно от `.exe`:
 
 ```text
-%LOCALAPPDATA%\V2TTS\models
+%LOCALAPPDATA%\V2TTS\models\sherpa-onnx\<profile-id>
 ```
 
-В `.exe` находятся только runtime-компоненты, но не веса GigaAM/Whisper. Если
-CUDA не запускается, причина и фактически выбранный CPU отображаются в журнале.
+В `.exe` находятся только runtime-компоненты, но не веса потоковых моделей,
+GigaAM или Whisper. Если потоковый STT не инициализируется, приложение показывает
+предупреждение и переключается на выбранный профиль того же языка `После фразы`.
+Если CUDA не запускается, причина и фактически выбранный CPU видны в журнале.
+
+Целевая задержка потокового режима — примерно 1–2 секунды до озвучивания
+стабильного текста; фактическое время также зависит от TTS и компьютера. Новая
+речь прерывает устаревшие фрагменты в очереди и при воспроизведении. `Stop`
+отменяет захват, загрузку модели, STT, синтез и воспроизведение, не закрывая GUI.
 
 ### Сборка
 
@@ -327,6 +367,17 @@ dist/V2TTS.exe --smoke-test
 
 ```bash
 V2TTS_REAL_AUDIO_TEST=1 python -m pytest -m integration
+```
+
+Реальную потоковую модель можно проверить без аудиоустройства, передав WAV с
+речью. Тест использует уже установленную модель; скачивание включается отдельно:
+
+```bash
+V2TTS_STREAMING_MODEL_TEST=1 \
+V2TTS_STREAMING_TEST_WAV=/path/to/speech.wav \
+V2TTS_STREAMING_PROFILE=sherpa_streaming_ru_t_one \
+V2TTS_ALLOW_MODEL_DOWNLOAD=1 \
+python -m pytest tests/integration/test_streaming_model_smoke.py -q
 ```
 
 ### Решение Проблем

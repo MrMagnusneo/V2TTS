@@ -1,5 +1,9 @@
+import contextlib
+import threading
+
 import numpy as np
-from unittest.mock import patch
+import pytest
+from unittest.mock import MagicMock, patch
 
 import audio_stream
 from audio_stream import AudioPhraseStream, StreamConfig
@@ -50,3 +54,31 @@ def test_callback_records_status_without_console_io() -> None:
 
     print_message.assert_not_called()
     assert stream.metrics().callback_statuses == 1
+
+
+def test_iter_frames_uses_production_input_stream_and_stops() -> None:
+    stop = threading.Event()
+    sd = MagicMock()
+
+    @contextlib.contextmanager
+    def input_stream(**kwargs):
+        kwargs["callback"](
+            np.ones((480, 1), dtype=np.float32) * 0.1,
+            480,
+            None,
+            None,
+        )
+        yield MagicMock()
+
+    sd.InputStream.side_effect = input_stream
+    stream = AudioPhraseStream(StreamConfig(sample_rate=16000, frame_ms=30))
+
+    with patch("audio_stream.get_sounddevice", return_value=sd):
+        packets = stream.iter_frames(stop)
+        packet = next(packets)
+        stop.set()
+        with pytest.raises(StopIteration):
+            next(packets)
+
+    assert packet.samples.shape == (480,)
+    assert packet.samples.dtype == np.float32

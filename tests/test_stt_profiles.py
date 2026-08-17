@@ -12,6 +12,25 @@ from stt_profiles import (
 )
 
 
+def test_streaming_profiles_are_language_specific() -> None:
+    from stt_profiles import (
+        StreamingSTTSelection,
+        default_streaming_selection,
+        validate_streaming_selection,
+    )
+
+    assert default_streaming_selection("ru") == StreamingSTTSelection(
+        "ru", "sherpa_streaming_ru_t_one"
+    )
+    assert default_streaming_selection("en") == StreamingSTTSelection(
+        "en", "sherpa_streaming_en_zipformer_20m"
+    )
+    with pytest.raises(ValueError, match="not available"):
+        validate_streaming_selection(
+            StreamingSTTSelection("en", "sherpa_streaming_ru_t_one")
+        )
+
+
 def test_russian_defaults_to_gigaam_e2e_rnnt() -> None:
     assert default_selection("ru") == STTSelection(
         language="ru",

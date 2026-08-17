@@ -136,7 +136,7 @@ class SpeechLoopRunner:
             if run_id != self._event_run_id:
                 return
 
-        if kind in {"status", "text", "error", "warning", "state"}:
+        if kind in {"status", "text", "partial", "error", "warning", "state"}:
             self.on_event(run_id, kind, payload)
 
     def _monitor_worker(self, process, event_queue, run_id: str) -> None:

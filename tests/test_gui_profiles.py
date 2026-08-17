@@ -58,6 +58,13 @@ def test_worker_stopped_does_not_reschedule_after_window_destroy() -> None:
 
 def test_collect_settings_maps_labels_to_profile_ids() -> None:
     gui = object.__new__(AppGUI)
+    gui.stt_mode_var = MagicMock(get=MagicMock(return_value="Streaming"))
+    gui.streaming_language_var = MagicMock(
+        get=MagicMock(return_value="Russian")
+    )
+    gui.streaming_profile_var = MagicMock(
+        get=MagicMock(return_value="Sherpa T-One Russian")
+    )
     gui.language_var = MagicMock(get=MagicMock(return_value="Russian"))
     gui.engine_var = MagicMock(get=MagicMock(return_value="GigaAM"))
     gui.stt_model_var = MagicMock(
@@ -76,6 +83,9 @@ def test_collect_settings_maps_labels_to_profile_ids() -> None:
     assert settings["stt_engine"] == "gigaam"
     assert settings["stt_model"] == "gigaam-v3-e2e-rnnt"
     assert settings["stt_device"] == "cpu"
+    assert settings["stt_mode"] == "streaming"
+    assert settings["streaming_language"] == "ru"
+    assert settings["streaming_profile"] == "sherpa_streaming_ru_t_one"
 
 
 def test_stopping_disables_start_and_stop() -> None:
@@ -89,3 +99,56 @@ def test_stopping_disables_start_and_stop() -> None:
     gui.start_button.configure.assert_called_with(state="disabled")
     gui.stop_button.configure.assert_called_with(state="disabled")
     gui.status_var.set.assert_called_with("Stopping...")
+
+
+def test_partial_replaces_mutable_field_without_appending_log() -> None:
+    gui = object.__new__(AppGUI)
+    gui.ui_queue = queue.Queue()
+    gui.is_run_current = MagicMock(return_value=True)
+    gui.on_worker_stopped = MagicMock(return_value=False)
+    gui.root = MagicMock()
+    gui.partial_var = MagicMock()
+    gui.warning_var = MagicMock()
+    gui.status_var = MagicMock()
+    gui._append_log = MagicMock()
+    gui.ui_queue.put(("run-1", "partial", "изменяемый черновик"))
+
+    gui._poll_ui_queue()
+
+    gui.partial_var.set.assert_called_once_with("изменяемый черновик")
+    gui._append_log.assert_not_called()
+
+
+def test_warning_remains_separate_from_later_status() -> None:
+    gui = object.__new__(AppGUI)
+    gui.ui_queue = queue.Queue()
+    gui.is_run_current = MagicMock(return_value=True)
+    gui.on_worker_stopped = MagicMock(return_value=False)
+    gui.root = MagicMock()
+    gui.partial_var = MagicMock()
+    gui.warning_var = MagicMock()
+    gui.status_var = MagicMock()
+    gui._append_log = MagicMock()
+    gui.ui_queue.put(("run-1", "warning", "phrase fallback"))
+    gui.ui_queue.put(("run-1", "status", "Listening..."))
+
+    gui._poll_ui_queue()
+
+    gui.warning_var.set.assert_called_once_with("phrase fallback")
+    gui.status_var.set.assert_called_once_with("Listening...")
+
+
+def test_streaming_runtime_states_keep_stop_available() -> None:
+    gui = object.__new__(AppGUI)
+    gui.start_button = MagicMock()
+    gui.stop_button = MagicMock()
+    gui.status_var = MagicMock()
+    gui._set_stt_controls_enabled = MagicMock()
+
+    for state in ("recognizing", "synthesizing", "playing"):
+        gui.set_pipeline_state(state)
+
+    assert gui.stop_button.configure.call_args_list[-1].kwargs == {
+        "state": "normal"
+    }
+    gui.status_var.set.assert_called_with("Playing...")
