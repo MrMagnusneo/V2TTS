@@ -6,6 +6,7 @@ import tkinter as tk
 from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_audio_devices, parse_index_from_label
 from gui import AppGUI
+from runtime_support import ensure_standard_streams
 from stt import STT_DEVICES
 from stt_profiles import STTSelection, validate_selection
 from tts import TTS_MODELS, prepare_runtime_tts_root
@@ -152,6 +153,7 @@ class AppController:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_standard_streams()
     multiprocessing.freeze_support()
     args = sys.argv[1:] if argv is None else argv
     check_runtime_dependencies()

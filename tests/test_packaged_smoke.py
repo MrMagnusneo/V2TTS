@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -62,3 +63,21 @@ def test_main_smoke_mode_does_not_create_gui() -> None:
     freeze_support.assert_called_once_with()
     run_smoke.assert_called_once_with()
     app_controller.assert_not_called()
+
+
+def test_main_restores_standard_streams_for_windowed_executable(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    def dependency_check() -> None:
+        sys.stdout.write("")
+        sys.stderr.write("")
+
+    with (
+        patch("main.multiprocessing.freeze_support"),
+        patch("main.check_runtime_dependencies", side_effect=dependency_check),
+        patch("smoke_test.run_packaged_smoke", return_value=0),
+    ):
+        assert main.main(["--smoke-test"]) == 0
