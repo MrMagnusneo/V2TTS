@@ -2,7 +2,12 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+    copy_metadata,
+)
 
 # In PyInstaller spec context `__file__` may be undefined.
 # `SPECPATH` points to the directory containing this spec file.
@@ -52,6 +57,7 @@ excluded_modules = [
 # Whisper runtime assets (including silero_vad_v6.onnx)
 datas += collect_data_files("faster_whisper")
 datas += collect_data_files("onnx_asr")
+datas += copy_metadata("onnx-asr")
 binaries += collect_dynamic_libs("onnxruntime")
 hiddenimports += collect_submodules("onnx_asr")
 
