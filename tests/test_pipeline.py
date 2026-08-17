@@ -1,12 +1,21 @@
+import queue
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from tqdm import tqdm
 
 from audio_stream import CapturedPhrase, StreamMetrics
-from pipeline import RunConfig, _process_phrase, play_audio_cancellable, run_pipeline
+from pipeline import (
+    RunConfig,
+    _process_phrase,
+    pipeline_process_main,
+    play_audio_cancellable,
+    run_pipeline,
+)
 from stt_profiles import STTSelection
 
 
@@ -208,3 +217,26 @@ def test_stop_during_tts_skips_file_read_and_playback() -> None:
 
     sf.read.assert_not_called()
     play.assert_not_called()
+
+
+def test_pipeline_child_restores_stderr_before_model_download(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(sys, "stderr", None)
+    events = queue.Queue()
+
+    def download_with_progress(*args, **kwargs) -> None:
+        list(tqdm(range(1)))
+
+    with patch("pipeline.run_pipeline", side_effect=download_with_progress):
+        pipeline_process_main(
+            "run-1",
+            run_config(),
+            StopEvent(),
+            events,
+        )
+
+    queued = []
+    while not events.empty():
+        queued.append(events.get_nowait())
+    assert not [event for event in queued if event[1] == "error"]

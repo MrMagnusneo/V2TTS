@@ -8,6 +8,7 @@ import numpy as np
 
 from audio_backend import get_sounddevice, get_soundfile
 from audio_stream import AudioPhraseStream, StreamConfig
+from runtime_support import ensure_standard_streams
 from stt import Transcriber, create_transcriber, is_stt_model_ready
 from stt_profiles import STTSelection
 from tts import synthesize_text
@@ -339,6 +340,8 @@ def pipeline_process_main(
     stop_event,
     event_queue,
 ) -> None:
+    ensure_standard_streams()
+
     def emit(kind: str, payload: str) -> None:
         event_queue.put((run_id, kind, payload))
 
