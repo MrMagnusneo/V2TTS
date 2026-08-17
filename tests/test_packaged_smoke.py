@@ -23,6 +23,7 @@ def test_smoke_synthesizes_and_decodes_both_tts_engines(tmp_path: Path) -> None:
             side_effect=lambda *args, **kwargs: kwargs["manual_model"],
         ) as synthesize,
         patch("smoke_test.get_soundfile", return_value=soundfile),
+        patch("smoke_test.run_streaming_runtime_smoke") as streaming_smoke,
     ):
         assert smoke_test.run_packaged_smoke(tts_root=tmp_path) == 0
 
@@ -33,6 +34,7 @@ def test_smoke_synthesizes_and_decodes_both_tts_engines(tmp_path: Path) -> None:
     assert all(call.kwargs["auto_select"] is False for call in synthesize.call_args_list)
     assert all(call.kwargs["tts_root"] == str(tmp_path) for call in synthesize.call_args_list)
     assert soundfile.read.call_count == 2
+    streaming_smoke.assert_called_once_with()
 
 
 def test_smoke_rejects_empty_audio(tmp_path: Path) -> None:
@@ -45,9 +47,25 @@ def test_smoke_rejects_empty_audio(tmp_path: Path) -> None:
             side_effect=lambda *args, **kwargs: kwargs["manual_model"],
         ),
         patch("smoke_test.get_soundfile", return_value=soundfile),
+        patch("smoke_test.run_streaming_runtime_smoke"),
         pytest.raises(RuntimeError, match="empty audio"),
     ):
         smoke_test.run_packaged_smoke(tts_root=tmp_path)
+
+
+def test_streaming_runtime_smoke_checks_api_and_manifest(monkeypatch) -> None:
+    fake_sherpa = MagicMock()
+    fake_sherpa.OnlineRecognizer = object()
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", fake_sherpa)
+
+    smoke_test.run_streaming_runtime_smoke()
+
+
+def test_streaming_runtime_smoke_rejects_missing_online_api(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", MagicMock(spec=[]))
+
+    with pytest.raises(RuntimeError, match="OnlineRecognizer"):
+        smoke_test.run_streaming_runtime_smoke()
 
 
 def test_main_smoke_mode_does_not_create_gui() -> None:

@@ -61,6 +61,13 @@ datas += copy_metadata("onnx-asr")
 binaries += collect_dynamic_libs("onnxruntime")
 hiddenimports += collect_submodules("onnx_asr")
 
+# Local streaming STT runtime. Model weights stay in user data and are not
+# collected here.
+datas += collect_data_files("sherpa_onnx")
+datas += copy_metadata("sherpa-onnx")
+binaries += collect_dynamic_libs("sherpa_onnx")
+hiddenimports += collect_submodules("sherpa_onnx")
+
 # Vendored Python TTS engines.
 hiddenimports += collect_submodules("sam_python")
 hiddenimports += collect_submodules("ru_tts_python")

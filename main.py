@@ -3,12 +3,19 @@ import multiprocessing
 import sys
 import tkinter as tk
 
+from app_settings import load_app_settings, save_app_settings
 from audio_queue import RunConfig, SpeechLoopRunner
 from devices import list_audio_devices, parse_index_from_label
 from gui import AppGUI
 from runtime_support import ensure_standard_streams
 from stt import STT_DEVICES
-from stt_profiles import STTSelection, validate_selection
+from stt_profiles import (
+    STTSelection,
+    StreamingSTTSelection,
+    default_selection,
+    validate_selection,
+    validate_streaming_selection,
+)
 from tts import TTS_MODELS, prepare_runtime_tts_root
 
 
@@ -48,6 +55,7 @@ class AppController:
         self._closing = False
 
         runtime_tts_root = prepare_runtime_tts_root()
+        initial_settings = load_app_settings()
 
         self.root = tk.Tk()
         self.gui = AppGUI(
@@ -60,6 +68,7 @@ class AppController:
             on_stop=self.stop,
             on_worker_stopped=self._runner_stopped,
             is_run_current=self._is_run_current,
+            initial_settings=initial_settings,
         )
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -99,13 +108,35 @@ class AppController:
             device=settings["stt_device"],
         )
         validate_selection(stt_selection)
+        streaming_selection = StreamingSTTSelection(
+            language=settings.get(
+                "streaming_language",
+                settings["stt_language"],
+            ),
+            profile=settings.get(
+                "streaming_profile",
+                "sherpa_streaming_ru_t_one",
+            ),
+        )
+        validate_streaming_selection(streaming_selection)
+        stt_mode = settings.get("stt_mode", "streaming")
+        if stt_mode not in {"streaming", "after_phrase"}:
+            raise ValueError(f"Unknown STT mode: {stt_mode}")
+        fallback_selection = stt_selection
+        if (
+            stt_mode == "streaming"
+            and stt_selection.language != streaming_selection.language
+        ):
+            fallback_selection = default_selection(streaming_selection.language)
         config = RunConfig(
             input_device=input_idx,
             output_device=output_idx,
-            stt=stt_selection,
+            stt=fallback_selection,
             auto_tts_model=settings["auto_tts_model"],
             manual_tts_model=settings["manual_tts_model"],
             tts_root=settings["tts_root"],
+            stt_mode=stt_mode,
+            streaming_stt=streaming_selection,
         )
 
         self.runner = SpeechLoopRunner(
@@ -119,6 +150,7 @@ class AppController:
         self.gui.set_pipeline_state("starting")
         try:
             self.runner.start()
+            save_app_settings(settings)
         except Exception:
             self.runner = None
             self.gui.set_pipeline_state("idle")

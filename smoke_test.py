@@ -51,8 +51,25 @@ def run_multiprocessing_smoke() -> None:
             pass
 
 
+def run_streaming_runtime_smoke() -> None:
+    import sherpa_onnx
+
+    if not hasattr(sherpa_onnx, "OnlineRecognizer"):
+        raise RuntimeError("sherpa-onnx OnlineRecognizer is unavailable")
+
+    from streaming_models import STREAMING_MODEL_PROFILES
+
+    expected = {
+        "sherpa_streaming_ru_t_one",
+        "sherpa_streaming_en_zipformer_20m",
+    }
+    if set(STREAMING_MODEL_PROFILES) != expected:
+        raise RuntimeError("Streaming model manifest is incomplete")
+
+
 def run_packaged_smoke(tts_root: Path | None = None) -> int:
     run_multiprocessing_smoke()
+    run_streaming_runtime_smoke()
     soundfile = get_soundfile()
 
     with tempfile.TemporaryDirectory(prefix="v2tts-smoke-") as temp_dir:
@@ -74,5 +91,5 @@ def run_packaged_smoke(tts_root: Path | None = None) -> int:
             if sample_rate <= 0 or len(samples) == 0:
                 raise RuntimeError(f"TTS smoke test produced empty audio for {model}")
 
-    print("V2TTS packaged smoke test passed: ru_tts, sam")
+    print("V2TTS packaged smoke test passed: sherpa-onnx, ru_tts, sam")
     return 0

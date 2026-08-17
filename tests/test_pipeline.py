@@ -15,8 +15,11 @@ from pipeline import (
     pipeline_process_main,
     play_audio_cancellable,
     run_pipeline,
+    synthesize_and_play_text,
 )
 from stt_profiles import STTSelection
+from stt_profiles import StreamingSTTSelection
+from streaming_pipeline import StreamingInitializationError
 
 
 class StopEvent:
@@ -43,6 +46,21 @@ def run_config() -> RunConfig:
         auto_tts_model=True,
         manual_tts_model="ru_tts",
         tts_root=None,
+    )
+
+
+def streaming_config() -> RunConfig:
+    return RunConfig(
+        input_device=None,
+        output_device=7,
+        stt=STTSelection("ru", "gigaam", "gigaam-v3-e2e-rnnt", "cpu"),
+        auto_tts_model=True,
+        manual_tts_model="ru_tts",
+        tts_root=None,
+        stt_mode="streaming",
+        streaming_stt=StreamingSTTSelection(
+            "ru", "sherpa_streaming_ru_t_one"
+        ),
     )
 
 
@@ -219,6 +237,42 @@ def test_stop_during_tts_skips_file_read_and_playback() -> None:
     play.assert_not_called()
 
 
+def test_shared_synthesis_helper_reports_ready_metrics_and_cleans_file(
+    tmp_path: Path,
+) -> None:
+    sd = MagicMock()
+    sf = MagicMock()
+    sf.read.return_value = (np.zeros(10, np.float32), 22050)
+    ready = []
+    output_paths = []
+
+    def synthesize(**kwargs):
+        output_paths.append(Path(kwargs["out_wav"]))
+        Path(kwargs["out_wav"]).write_bytes(b"wav")
+        return "sam"
+
+    with (
+        patch("pipeline.synthesize_text", side_effect=synthesize),
+        patch("pipeline.prepare_audio_for_output", return_value=(np.zeros(10), 22050)),
+        patch("pipeline.play_audio_cancellable") as play,
+        patch("pipeline.time.perf_counter", side_effect=[1.0, 1.25]),
+    ):
+        result = synthesize_and_play_text(
+            "hello",
+            sd,
+            sf,
+            run_config(),
+            StopEvent(),
+            on_ready=ready.append,
+        )
+
+    assert result.engine == "sam"
+    assert result.tts_ms == 250
+    assert ready == [result]
+    play.assert_called_once()
+    assert output_paths and not output_paths[0].exists()
+
+
 def test_pipeline_child_restores_stderr_before_model_download(
     monkeypatch,
 ) -> None:
@@ -240,3 +294,41 @@ def test_pipeline_child_restores_stderr_before_model_download(
     while not events.empty():
         queued.append(events.get_nowait())
     assert not [event for event in queued if event[1] == "error"]
+
+
+def test_streaming_initialization_failure_falls_back_to_phrase_mode() -> None:
+    events = []
+    with (
+        patch(
+            "pipeline.run_streaming_pipeline",
+            side_effect=StreamingInitializationError("native DLL unavailable"),
+        ),
+        patch("pipeline.run_phrase_pipeline") as phrase,
+    ):
+        run_pipeline(
+            streaming_config(),
+            StopEvent(),
+            lambda kind, payload: events.append((kind, payload)),
+        )
+
+    phrase.assert_called_once()
+    assert events == [
+        (
+            "warning",
+            "Streaming STT unavailable; using after-phrase mode: "
+            "native DLL unavailable",
+        )
+    ]
+
+
+def test_streaming_runtime_failure_is_not_hidden_by_fallback() -> None:
+    with (
+        patch(
+            "pipeline.run_streaming_pipeline",
+            side_effect=RuntimeError("decoder bug"),
+        ),
+        patch("pipeline.run_phrase_pipeline") as phrase,
+        pytest.raises(RuntimeError, match="decoder bug"),
+    ):
+        run_pipeline(streaming_config(), StopEvent(), MagicMock())
+    phrase.assert_not_called()

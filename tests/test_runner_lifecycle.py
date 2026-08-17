@@ -93,6 +93,18 @@ def test_current_run_state_event_is_dispatched() -> None:
     assert events == [("run-1", "state", "listening")]
 
 
+def test_current_partial_event_is_dispatched_but_stale_partial_is_not() -> None:
+    events = []
+    runner = build_runner(MagicMock(), Scheduler(), events)
+    runner._active_run_id = "run-1"
+    runner._event_run_id = "run-1"
+
+    runner._dispatch_event(("run-1", "partial", "текущий черновик"))
+    runner._dispatch_event(("old-run", "partial", "старый черновик"))
+
+    assert events == [("run-1", "partial", "текущий черновик")]
+
+
 def test_abnormal_worker_exit_is_reported_for_current_run() -> None:
     events = []
     runner = build_runner(MagicMock(), Scheduler(), events)

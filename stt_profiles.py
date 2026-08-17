@@ -29,6 +29,18 @@ class STTSelection:
     device: str
 
 
+@dataclass(frozen=True)
+class StreamingSTTSelection:
+    language: str
+    profile: str
+
+
+_STREAMING_BY_LANGUAGE = {
+    "ru": ("sherpa_streaming_ru_t_one",),
+    "en": ("sherpa_streaming_en_zipformer_20m",),
+}
+
+
 def engines_for_language(language: str) -> tuple[str, ...]:
     if language not in LANGUAGE_LABELS:
         raise ValueError(f"Unknown STT language: {language}")
@@ -60,6 +72,29 @@ def default_selection(language: str = "ru") -> STTSelection:
     if language == "en":
         return STTSelection("en", "whisper", "medium", "cpu")
     raise ValueError(f"Unknown STT language: {language}")
+
+
+def default_streaming_selection(
+    language: str = "ru",
+) -> StreamingSTTSelection:
+    try:
+        return StreamingSTTSelection(
+            language=language,
+            profile=_STREAMING_BY_LANGUAGE[language][0],
+        )
+    except KeyError as exc:
+        raise ValueError(f"Unknown STT language: {language}") from exc
+
+
+def validate_streaming_selection(selection: StreamingSTTSelection) -> None:
+    if selection.profile not in _STREAMING_BY_LANGUAGE.get(
+        selection.language,
+        (),
+    ):
+        raise ValueError(
+            f"Streaming profile {selection.profile} is not available for "
+            f"language {selection.language}"
+        )
 
 
 def user_data_root() -> Path:

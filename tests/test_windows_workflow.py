@@ -20,6 +20,21 @@ def test_windows_build_installs_onnx_asr_runtime() -> None:
     assert '"onnx-asr[cpu,hub]>=0.12,<0.13"' in project
 
 
+def test_windows_build_pins_and_collects_sherpa_without_models() -> None:
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
+    spec = Path("installer/V2TTS.spec").read_text(encoding="utf-8")
+
+    assert "sherpa-onnx==1.13.5" in requirements
+    assert '"sherpa-onnx==1.13.5"' in project
+    assert 'collect_submodules("sherpa_onnx")' in spec
+    assert 'collect_data_files("sherpa_onnx")' in spec
+    assert 'collect_dynamic_libs("sherpa_onnx")' in spec
+    assert 'copy_metadata("sherpa-onnx")' in spec
+    assert "sherpa-onnx-streaming-t-one" not in spec
+    assert "sherpa-onnx-streaming-zipformer" not in spec
+
+
 def test_pyinstaller_collects_onnx_asr_without_model_weights() -> None:
     spec = Path("installer/V2TTS.spec").read_text(encoding="utf-8")
 
