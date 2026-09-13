@@ -5,7 +5,7 @@
 Desktop GUI app for a real-time `speech -> text -> speech` loop.
 
 - STT: local streaming `sherpa-onnx`, GigaAM v3, and `faster-whisper`
-- TTS: vendored Python `ru_tts` for Russian and vendored Python `sam` for English
+- TTS: vendored Python `ru_tts`, `sam`, DECtalk, Silero, and Coqui engines
 - GUI: `tkinter`
 - Packaging: one cross-platform Python build script
 
@@ -23,7 +23,9 @@ Desktop GUI app for a real-time `speech -> text -> speech` loop.
 - English: explicit-English Whisper `small`, `medium`, or `large-v3`.
 - Select audio input/output devices.
 - Auto TTS model selection by text language: Cyrillic -> `ru_tts`, Latin -> `sam`.
-- Manual TTS model override: `ru_tts` or `sam`.
+- Manual TTS engine selection: `ru_tts`, `sam`, `dectalk`, `silero`, or `coqui`.
+  Automatic selection intentionally remains `ru_tts` for Cyrillic and `sam`
+  for Latin text.
 
 ### Project Structure
 
@@ -122,6 +124,12 @@ model weights. If streaming initialization fails, the log shows a warning and
 the app falls back to the selected same-language `After phrase` profile. If CUDA
 initialization fails, the log shows the reason and the actual CPU fallback.
 
+Silero and Coqui also download their default TTS models on first use and keep
+them in their standard framework caches. DECtalk, `ru_tts`, and `sam` are fully
+offline after the application and its submodules are installed. The default
+Silero voice is Russian (`v4_ru`/`baya`); the default Coqui model is English
+(`tts_models/en/ljspeech/tacotron2-DDC`).
+
 Streaming targets roughly 1–2 seconds before stable text is spoken; actual
 latency also depends on the chosen TTS engine and the computer. New speech
 interrupts obsolete queued/playback chunks. `Stop` cancels capture, model
@@ -158,9 +166,10 @@ Run the automated suite:
 python -m pytest -q
 ```
 
-The Windows workflow builds the frozen executable and runs the packaged TTS plus
-multiprocessing smoke checks automatically. The smoke does not download an STT
-model. You can run the same check locally after a build:
+The Windows workflow builds the frozen executable and runs the offline packaged
+TTS plus multiprocessing smoke checks automatically. The smoke does not
+download an STT or neural TTS model. You can run the same check locally after a
+build:
 
 ```bash
 dist/V2TTS.exe --smoke-test
@@ -200,7 +209,7 @@ python -m pytest tests/integration/test_streaming_model_smoke.py -q
 Десктопное GUI-приложение для real-time конвейера `speech -> text -> speech`.
 
 - STT: локальный потоковый `sherpa-onnx`, GigaAM v3 и `faster-whisper`
-- TTS: vendored Python `ru_tts` для русского и vendored Python `sam` для английского
+- TTS: vendored Python-движки `ru_tts`, `sam`, DECtalk, Silero и Coqui
 - GUI: `tkinter`
 - Сборка: один кроссплатформенный Python-скрипт
 
@@ -219,7 +228,9 @@ python -m pytest tests/integration/test_streaming_model_smoke.py -q
   английским языком.
 - Выбор устройств ввода/вывода аудио.
 - Автовыбор TTS по языку текста: кириллица -> `ru_tts`, латиница -> `sam`.
-- Ручной выбор TTS: `ru_tts` или `sam`.
+- Ручной выбор TTS: `ru_tts`, `sam`, `dectalk`, `silero` или `coqui`.
+  Автовыбор намеренно остаётся прежним: `ru_tts` для кириллицы и `sam` для
+  латиницы.
 
 ### Структура Проекта
 
@@ -318,6 +329,12 @@ GigaAM или Whisper. Если потоковый STT не инициализи
 предупреждение и переключается на выбранный профиль того же языка `После фразы`.
 Если CUDA не запускается, причина и фактически выбранный CPU видны в журнале.
 
+Silero и Coqui при первом использовании также скачивают стандартные TTS-модели
+и сохраняют их в обычных cache-каталогах своих фреймворков. DECtalk, `ru_tts` и
+`sam` после установки приложения и сабмодулей работают полностью офлайн.
+Стандартный голос Silero — русский `v4_ru`/`baya`, стандартная модель Coqui —
+английская `tts_models/en/ljspeech/tacotron2-DDC`.
+
 Целевая задержка потокового режима — примерно 1–2 секунды до озвучивания
 стабильного текста; фактическое время также зависит от TTS и компьютера. Новая
 речь прерывает устаревшие фрагменты в очереди и при воспроизведении. `Stop`
@@ -355,7 +372,8 @@ python -m pytest -q
 ```
 
 Windows workflow собирает frozen executable и автоматически запускает smoke-тест
-упакованных TTS-движков и дочернего процесса. STT-модели при этом не скачиваются.
+офлайн TTS-движков и дочернего процесса. STT-модели и нейросетевые TTS-модели
+при этом не скачиваются.
 Тот же тест можно запустить локально после сборки:
 
 ```bash

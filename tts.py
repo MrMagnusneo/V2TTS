@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Optional, Union
@@ -8,7 +9,7 @@ from typing import BinaryIO, Optional, Union
 CYR = re.compile(r"[А-Яа-яЁё]")
 LAT = re.compile(r"[A-Za-z]")
 
-TTS_MODELS = ["ru_tts", "sam"]
+TTS_MODELS = ["ru_tts", "sam", "dectalk", "silero", "coqui"]
 
 
 @dataclass(frozen=True)
@@ -16,9 +17,14 @@ class TTSPaths:
     tts_root: Path
     sam_python_root: Path
     ru_tts_python_root: Path
+    dectalk_python_root: Path
+    silero_tts_root: Path
+    coqui_tts_root: Path
 
 
 _RU_TTS_ENGINES: dict[Path, object] = {}
+_SILERO_TTS_ENGINES: dict[Path, object] = {}
+_COQUI_TTS_ENGINES: dict[Path, object] = {}
 
 
 def _is_frozen() -> bool:
@@ -54,6 +60,9 @@ def _root_has_python_tts(root: Path) -> bool:
     return (
         (root / "sam-python" / "sam_python").exists()
         and (root / "ru_tts-python" / "ru_tts_python").exists()
+        and (root / "dectalk-python" / "dectalk_python").exists()
+        and (root / "silero-tts-wrapper" / "silero_tts").exists()
+        and (root / "coqui-tts-wrapper" / "coqui_tts").exists()
     )
 
 
@@ -108,11 +117,20 @@ def resolve_tts_paths(tts_root: Optional[str] = None) -> TTSPaths:
         tts_root=root,
         sam_python_root=root / "sam-python",
         ru_tts_python_root=root / "ru_tts-python",
+        dectalk_python_root=root / "dectalk-python",
+        silero_tts_root=root / "silero-tts-wrapper",
+        coqui_tts_root=root / "coqui-tts-wrapper",
     )
 
 
 def _add_vendor_paths(paths: TTSPaths) -> None:
-    for package_root in (paths.sam_python_root, paths.ru_tts_python_root):
+    for package_root in (
+        paths.sam_python_root,
+        paths.ru_tts_python_root,
+        paths.dectalk_python_root,
+        paths.silero_tts_root,
+        paths.coqui_tts_root,
+    ):
         if package_root.exists():
             package_root_str = str(package_root)
             if package_root_str not in sys.path:
@@ -165,6 +183,70 @@ def tts_ru_tts(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> Non
         out_wav.write(wav_bytes)
 
 
+def tts_dectalk(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
+    _add_vendor_paths(paths)
+    from dectalk_python import DectalkSynthesizer
+
+    wav_bytes = DectalkSynthesizer().synthesize(text).to_wav_bytes()
+    if isinstance(out_wav, str):
+        Path(out_wav).write_bytes(wav_bytes)
+    else:
+        out_wav.write(wav_bytes)
+
+
+def _silero_engine(paths: TTSPaths):
+    cache_key = paths.silero_tts_root.resolve()
+    if cache_key in _SILERO_TTS_ENGINES:
+        return _SILERO_TTS_ENGINES[cache_key]
+
+    _add_vendor_paths(paths)
+    from silero_tts import SileroTTSEngine
+
+    engine = SileroTTSEngine()
+    _SILERO_TTS_ENGINES[cache_key] = engine
+    return engine
+
+
+def _coqui_engine(paths: TTSPaths):
+    cache_key = paths.coqui_tts_root.resolve()
+    if cache_key in _COQUI_TTS_ENGINES:
+        return _COQUI_TTS_ENGINES[cache_key]
+
+    _add_vendor_paths(paths)
+    from coqui_tts import CoquiTTSEngine
+
+    engine = CoquiTTSEngine(progress_bar=False)
+    _COQUI_TTS_ENGINES[cache_key] = engine
+    return engine
+
+
+def _synthesize_path_only_engine(
+    engine,
+    text: str,
+    out_wav: Union[str, BinaryIO],
+) -> None:
+    if isinstance(out_wav, str):
+        engine.synthesize_to_file(text, out_wav)
+        return
+
+    file_descriptor, temporary_path = tempfile.mkstemp(suffix=".wav")
+    os.close(file_descriptor)
+    temporary = Path(temporary_path)
+    try:
+        engine.synthesize_to_file(text, temporary)
+        out_wav.write(temporary.read_bytes())
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def tts_silero(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
+    _synthesize_path_only_engine(_silero_engine(paths), text, out_wav)
+
+
+def tts_coqui(text: str, out_wav: Union[str, BinaryIO], paths: TTSPaths) -> None:
+    _synthesize_path_only_engine(_coqui_engine(paths), text, out_wav)
+
+
 def synthesize_text(
     text: str,
     out_wav: Union[str, BinaryIO],
@@ -191,6 +273,12 @@ def synthesize_text(
                 tts_ru_tts(text, out_wav, paths)
             elif engine == "sam":
                 tts_sam(text, out_wav, paths)
+            elif engine == "dectalk":
+                tts_dectalk(text, out_wav, paths)
+            elif engine == "silero":
+                tts_silero(text, out_wav, paths)
+            elif engine == "coqui":
+                tts_coqui(text, out_wav, paths)
             else:
                 raise ValueError(f"Unknown TTS model: {engine}")
             return engine

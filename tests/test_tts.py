@@ -1,6 +1,14 @@
+import configparser
+import io
 from pathlib import Path
+import sys
+from types import ModuleType
 import unittest
+import wave
 
+import pytest
+
+import tts
 from tts import TTS_MODELS, choose_tts_engine
 
 def test_choose_tts_engine_manual_override():
@@ -13,16 +21,104 @@ def test_choose_tts_engine_happy_path():
     assert choose_tts_engine("Привет world") == "ru_tts"
 
 
-def test_only_packaged_tts_models_are_offered():
-    assert TTS_MODELS == ["ru_tts", "sam"]
+def test_all_packaged_tts_models_are_offered():
+    assert TTS_MODELS == ["ru_tts", "sam", "dectalk", "silero", "coqui"]
 
 
-def test_silero_is_not_a_runtime_dependency():
-    requirements = Path("requirements.txt").read_text(encoding="utf-8")
-    main_source = Path("main.py").read_text(encoding="utf-8")
+def test_resolve_tts_paths_includes_every_vendored_engine(tmp_path: Path):
+    paths = tts.resolve_tts_paths(str(tmp_path))
 
-    assert "silero-tts" not in requirements
-    assert "silero_tts" not in main_source
+    assert paths.dectalk_python_root == tmp_path / "dectalk-python"
+    assert paths.silero_tts_root == tmp_path / "silero-tts-wrapper"
+    assert paths.coqui_tts_root == tmp_path / "coqui-tts-wrapper"
+
+
+def test_every_selectable_vendored_engine_is_a_submodule():
+    config = configparser.ConfigParser()
+    config.read(".gitmodules", encoding="utf-8")
+
+    expected = {
+        "tts/ru_tts-python": "https://github.com/MrMagnusneo/ru_tts-python",
+        "tts/sam-python": "https://github.com/MrMagnusneo/sam-python",
+        "tts/dectalk-python": "https://github.com/MrMagnusneo/dectalk-python",
+        "tts/silero-tts-wrapper": "https://github.com/MrMagnusneo/silero-tts-wrapper",
+        "tts/coqui-tts-wrapper": "https://github.com/MrMagnusneo/coqui-tts-wrapper",
+    }
+    configured = {
+        config[section]["path"]: config[section]["url"]
+        for section in config.sections()
+    }
+
+    assert configured == expected
+    assert (Path("tts/silero-tts-wrapper") / "silero_tts").is_dir()
+    assert (Path("tts/coqui-tts-wrapper") / "coqui_tts").is_dir()
+
+
+def test_dectalk_manual_selection_produces_valid_wav(tmp_path: Path):
+    output = tmp_path / "dectalk.wav"
+
+    selected = tts.synthesize_text(
+        "Hello from DECtalk",
+        str(output),
+        auto_select=False,
+        manual_model="dectalk",
+    )
+
+    assert selected == "dectalk"
+    with wave.open(str(output), "rb") as wav_file:
+        assert wav_file.getnchannels() == 1
+        assert wav_file.getsampwidth() == 2
+        assert wav_file.getnframes() > 0
+
+
+@pytest.mark.parametrize(
+    ("model", "module_name", "class_name", "cache_name"),
+    [
+        ("silero", "silero_tts", "SileroTTSEngine", "_SILERO_TTS_ENGINES"),
+        ("coqui", "coqui_tts", "CoquiTTSEngine", "_COQUI_TTS_ENGINES"),
+    ],
+)
+def test_downloaded_model_engines_support_file_like_wav_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    module_name: str,
+    class_name: str,
+    cache_name: str,
+):
+    created = []
+
+    class FakeEngine:
+        def __init__(self, **_kwargs):
+            created.append(self)
+
+        def synthesize_to_file(self, text, out_path):
+            Path(out_path).write_bytes(b"RIFF-vendored-" + text.encode())
+
+    fake_module = ModuleType(module_name)
+    setattr(fake_module, class_name, FakeEngine)
+    monkeypatch.setitem(sys.modules, module_name, fake_module)
+    getattr(tts, cache_name).clear()
+    output = io.BytesIO()
+
+    first = tts.synthesize_text(
+        "hello",
+        output,
+        auto_select=False,
+        manual_model=model,
+        tts_root=str(tmp_path),
+    )
+    second = tts.synthesize_text(
+        "again",
+        io.BytesIO(),
+        auto_select=False,
+        manual_model=model,
+        tts_root=str(tmp_path),
+    )
+
+    assert first == second == model
+    assert output.getvalue() == b"RIFF-vendored-hello"
+    assert len(created) == 1
 
 def test_choose_tts_engine_edge_cases():
     assert choose_tts_engine("") == "sam"

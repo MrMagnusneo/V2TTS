@@ -13,7 +13,7 @@ def test_multiprocessing_smoke_round_trip() -> None:
     assert smoke_test.run_multiprocessing_smoke() is None
 
 
-def test_smoke_synthesizes_and_decodes_both_tts_engines(tmp_path: Path) -> None:
+def test_smoke_synthesizes_and_decodes_offline_tts_engines(tmp_path: Path) -> None:
     soundfile = MagicMock()
     soundfile.read.return_value = (np.array([0.1, -0.1]), 22050)
 
@@ -30,10 +30,11 @@ def test_smoke_synthesizes_and_decodes_both_tts_engines(tmp_path: Path) -> None:
     assert [call.kwargs["manual_model"] for call in synthesize.call_args_list] == [
         "ru_tts",
         "sam",
+        "dectalk",
     ]
     assert all(call.kwargs["auto_select"] is False for call in synthesize.call_args_list)
     assert all(call.kwargs["tts_root"] == str(tmp_path) for call in synthesize.call_args_list)
-    assert soundfile.read.call_count == 2
+    assert soundfile.read.call_count == 3
     streaming_smoke.assert_called_once_with()
 
 
