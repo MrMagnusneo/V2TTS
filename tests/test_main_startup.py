@@ -1,3 +1,5 @@
+from pathlib import Path
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -128,3 +130,108 @@ def test_worker_stopped_destroys_window_when_close_is_pending() -> None:
 
     controller.root.destroy.assert_called_once()
     assert destroyed is True
+
+
+def test_controller_exports_tts_on_background_thread(tmp_path: Path) -> None:
+    controller = object.__new__(AppController)
+    controller.gui = MagicMock()
+    controller._tts_export_thread = None
+    output = tmp_path / "speech.wav"
+    main_thread = threading.get_ident()
+    synthesized_on = []
+    completed = threading.Event()
+
+    def synthesize(text, out_wav, **kwargs):
+        synthesized_on.append(threading.get_ident())
+        Path(out_wav).write_bytes(b"RIFF-export")
+        return kwargs["manual_model"]
+
+    def enqueue(kind, message):
+        completed.set()
+
+    controller.gui.enqueue_event.side_effect = enqueue
+
+    with patch("main.synthesize_text", side_effect=synthesize):
+        controller.export_tts(
+            "hello",
+            str(output),
+            False,
+            "dectalk",
+            "C:/tts",
+        )
+        assert completed.wait(timeout=3)
+
+    assert output.read_bytes() == b"RIFF-export"
+    assert synthesized_on and synthesized_on[0] != main_thread
+    kind, message = controller.gui.enqueue_event.call_args.args
+    assert kind == "tts_export_done"
+    assert message == f"Saved WAV with dectalk: {output}"
+
+
+def test_controller_reports_tts_export_failure_without_damaging_output(
+    tmp_path: Path,
+) -> None:
+    controller = object.__new__(AppController)
+    controller.gui = MagicMock()
+    controller._tts_export_thread = None
+    completed = threading.Event()
+    output = tmp_path / "speech.wav"
+    output.write_bytes(b"existing wav")
+
+    def enqueue(_kind, _message):
+        completed.set()
+
+    controller.gui.enqueue_event.side_effect = enqueue
+
+    def fail_after_writing(text, out_wav, **_kwargs):
+        Path(out_wav).write_bytes(b"partial wav")
+        raise RuntimeError("model failed")
+
+    with patch("main.synthesize_text", side_effect=fail_after_writing):
+        controller.export_tts(
+            "hello",
+            str(output),
+            False,
+            "coqui",
+            None,
+        )
+        assert completed.wait(timeout=3)
+
+    kind, message = controller.gui.enqueue_event.call_args.args
+    assert kind == "tts_export_error"
+    assert "model failed" in message
+    assert output.read_bytes() == b"existing wav"
+    assert list(tmp_path.glob(".speech.wav.*.tmp.wav")) == []
+
+
+def test_window_close_waits_for_tts_export() -> None:
+    controller = object.__new__(AppController)
+    controller._closing = False
+    controller.root = MagicMock()
+    controller.gui = MagicMock()
+    controller.runner = None
+    controller._tts_export_thread = MagicMock()
+    controller._tts_export_thread.is_alive.return_value = True
+
+    controller.close()
+
+    controller.gui.warn_export_in_progress.assert_called_once_with()
+    controller.root.destroy.assert_not_called()
+    assert controller._closing is False
+
+
+def test_pipeline_close_rejects_new_tts_export_until_window_is_destroyed() -> None:
+    controller = object.__new__(AppController)
+    controller._closing = False
+    controller.root = MagicMock()
+    controller.gui = MagicMock()
+    controller.runner = MagicMock()
+    controller.runner.is_running.return_value = True
+    controller._tts_export_thread = None
+
+    controller.close()
+
+    assert controller._closing is True
+    controller.gui.set_export_enabled.assert_called_once_with(False)
+    with pytest.raises(RuntimeError, match="closing"):
+        controller.export_tts("hello", "out.wav", False, "sam", None)

@@ -1,5 +1,5 @@
 import queue
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from gui import AppGUI
 
@@ -152,3 +152,132 @@ def test_streaming_runtime_states_keep_stop_available() -> None:
         "state": "normal"
     }
     gui.status_var.set.assert_called_with("Playing...")
+
+
+def test_export_to_wav_uses_current_tts_settings(tmp_path) -> None:
+    gui = object.__new__(AppGUI)
+    gui.tts_text = MagicMock()
+    gui.tts_text.get.return_value = "  Text to synthesize  \n"
+    gui.auto_tts_var = MagicMock(get=MagicMock(return_value=False))
+    gui.tts_model_var = MagicMock(get=MagicMock(return_value="dectalk"))
+    gui.tts_root_var = MagicMock(get=MagicMock(return_value=" C:/tts "))
+    gui.export_button = MagicMock()
+    gui.export_status_var = MagicMock()
+    requests = []
+    gui.on_export_tts = lambda *args: requests.append(args)
+    output = tmp_path / "speech.wav"
+
+    with patch("gui.filedialog.asksaveasfilename", return_value=str(output)):
+        gui.export_to_wav()
+
+    assert requests == [
+        ("Text to synthesize", str(output), False, "dectalk", "C:/tts")
+    ]
+    gui.export_button.configure.assert_called_with(state="disabled")
+    gui.export_status_var.set.assert_called_with("Synthesizing...")
+
+
+def test_export_to_wav_rejects_empty_text() -> None:
+    gui = object.__new__(AppGUI)
+    gui.tts_text = MagicMock()
+    gui.tts_text.get.return_value = " \n"
+    gui.on_export_tts = MagicMock()
+
+    with (
+        patch("gui.filedialog.asksaveasfilename") as save_dialog,
+        patch("gui.messagebox.showerror") as show_error,
+    ):
+        gui.export_to_wav()
+
+    save_dialog.assert_not_called()
+    gui.on_export_tts.assert_not_called()
+    show_error.assert_called_once()
+
+
+def test_export_to_wav_cancel_does_not_start_export() -> None:
+    gui = object.__new__(AppGUI)
+    gui.tts_text = MagicMock()
+    gui.tts_text.get.return_value = "Text to synthesize"
+    gui.on_export_tts = MagicMock()
+
+    with patch("gui.filedialog.asksaveasfilename", return_value=""):
+        gui.export_to_wav()
+
+    gui.on_export_tts.assert_not_called()
+
+
+def test_export_to_wav_reports_start_failure_in_log(tmp_path) -> None:
+    gui = object.__new__(AppGUI)
+    gui.tts_text = MagicMock()
+    gui.tts_text.get.return_value = "Text to synthesize"
+    gui.auto_tts_var = MagicMock(get=MagicMock(return_value=True))
+    gui.tts_model_var = MagicMock(get=MagicMock(return_value="sam"))
+    gui.tts_root_var = MagicMock(get=MagicMock(return_value=""))
+    gui.export_button = MagicMock()
+    gui.export_status_var = MagicMock()
+    gui._append_log = MagicMock()
+    gui.on_export_tts = MagicMock(side_effect=RuntimeError("thread failed"))
+
+    with (
+        patch(
+            "gui.filedialog.asksaveasfilename",
+            return_value=str(tmp_path / "speech.wav"),
+        ),
+        patch("gui.messagebox.showerror") as show_error,
+    ):
+        gui.export_to_wav()
+
+    gui.export_button.configure.assert_called_with(state="normal")
+    gui.export_status_var.set.assert_called_with("Export failed")
+    gui._append_log.assert_called_once_with("ERROR: thread failed\n")
+    show_error.assert_called_once_with("TTS export error", "thread failed")
+
+
+def test_export_completion_reenables_button_and_reports_file() -> None:
+    gui = object.__new__(AppGUI)
+    gui.ui_queue = queue.Queue()
+    gui.is_run_current = MagicMock(return_value=True)
+    gui.on_worker_stopped = MagicMock(return_value=False)
+    gui.root = MagicMock()
+    gui.partial_var = MagicMock()
+    gui.warning_var = MagicMock()
+    gui.status_var = MagicMock()
+    gui.export_status_var = MagicMock()
+    gui.export_button = MagicMock()
+    gui._append_log = MagicMock()
+    gui.ui_queue.put((None, "tts_export_done", "Saved WAV with dectalk: out.wav"))
+
+    gui._poll_ui_queue()
+
+    gui.export_button.configure.assert_called_once_with(state="normal")
+    gui.export_status_var.set.assert_called_once_with(
+        "Saved WAV with dectalk: out.wav"
+    )
+
+
+def test_export_error_reenables_button_and_reports_failure() -> None:
+    gui = object.__new__(AppGUI)
+    gui.ui_queue = queue.Queue()
+    gui.is_run_current = MagicMock(return_value=True)
+    gui.on_worker_stopped = MagicMock(return_value=False)
+    gui.root = MagicMock()
+    gui.partial_var = MagicMock()
+    gui.warning_var = MagicMock()
+    gui.status_var = MagicMock()
+    gui.export_status_var = MagicMock()
+    gui.export_button = MagicMock()
+    gui._append_log = MagicMock()
+    gui.ui_queue.put((None, "tts_export_error", "TTS export failed: bad model"))
+
+    with patch("gui.messagebox.showerror") as show_error:
+        gui._poll_ui_queue()
+
+    gui.export_button.configure.assert_called_once_with(state="normal")
+    gui.export_status_var.set.assert_called_once_with("Export failed")
+    gui._append_log.assert_called_once_with(
+        "ERROR: TTS export failed: bad model\n"
+    )
+    show_error.assert_called_once_with(
+        "TTS export error",
+        "TTS export failed: bad model",
+    )
