@@ -7,3 +7,9 @@
 [submodule "tts/dectalk-python"]
 	path = tts/dectalk-python
 	url = https://github.com/MrMagnusneo/dectalk-python
+[submodule "tts/silero-tts-wrapper"]
+	path = tts/silero-tts-wrapper
+	url = https://github.com/MrMagnusneo/silero-tts-wrapper
+[submodule "tts/coqui-tts-wrapper"]
+	path = tts/coqui-tts-wrapper
+	url = https://github.com/MrMagnusneo/coqui-tts-wrapper

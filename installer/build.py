@@ -12,6 +12,9 @@ INSTALLER_DIR = Path(__file__).resolve().parent
 ROOT = INSTALLER_DIR.parent
 SAM_ROOT = ROOT / "tts" / "sam-python"
 RU_TTS_ROOT = ROOT / "tts" / "ru_tts-python"
+DECTALK_ROOT = ROOT / "tts" / "dectalk-python"
+SILERO_ROOT = ROOT / "tts" / "silero-tts-wrapper"
+COQUI_ROOT = ROOT / "tts" / "coqui-tts-wrapper"
 
 
 def _default_gcc_candidates(platform: str) -> list[Path]:
@@ -86,7 +89,13 @@ def run(cmd: list[str], cwd: Path = ROOT) -> None:
 
 
 def ensure_local_packages_on_path() -> None:
-    for path in (SAM_ROOT, RU_TTS_ROOT):
+    for path in (
+        SAM_ROOT,
+        RU_TTS_ROOT,
+        DECTALK_ROOT,
+        SILERO_ROOT,
+        COQUI_ROOT,
+    ):
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
@@ -96,6 +105,9 @@ def ensure_submodules() -> None:
     required = [
         SAM_ROOT / "sam_python",
         RU_TTS_ROOT / "ru_tts_python",
+        DECTALK_ROOT / "dectalk_python",
+        SILERO_ROOT / "silero_tts",
+        COQUI_ROOT / "coqui_tts",
     ]
     missing = [path for path in required if not path.exists()]
     if missing:

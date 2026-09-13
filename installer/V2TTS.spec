@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import (
+    collect_all,
     collect_data_files,
     collect_dynamic_libs,
     collect_submodules,
@@ -14,8 +15,17 @@ from PyInstaller.utils.hooks import (
 ROOT = Path(globals().get("SPECPATH", ".")).resolve().parent
 SAM_ROOT = ROOT / "tts" / "sam-python"
 RU_TTS_ROOT = ROOT / "tts" / "ru_tts-python"
+DECTALK_ROOT = ROOT / "tts" / "dectalk-python"
+SILERO_ROOT = ROOT / "tts" / "silero-tts-wrapper"
+COQUI_ROOT = ROOT / "tts" / "coqui-tts-wrapper"
 
-for package_root in (SAM_ROOT, RU_TTS_ROOT):
+for package_root in (
+    SAM_ROOT,
+    RU_TTS_ROOT,
+    DECTALK_ROOT,
+    SILERO_ROOT,
+    COQUI_ROOT,
+):
     sys.path.insert(0, str(package_root))
 
 binaries = []
@@ -39,17 +49,12 @@ excluded_modules = [
     "jedi",
     "keras",
     "lxml",
-    "matplotlib",
     "notebook",
     "pandas",
     "PIL",
     "pyarrow",
     "pytest",
-    "scipy",
-    "sklearn",
     "tensorflow",
-    "torch",
-    "torchaudio",
     "torchvision",
     "triton",
 ]
@@ -71,6 +76,26 @@ hiddenimports += collect_submodules("sherpa_onnx")
 # Vendored Python TTS engines.
 hiddenimports += collect_submodules("sam_python")
 hiddenimports += collect_submodules("ru_tts_python")
+hiddenimports += collect_submodules("dectalk_python")
+hiddenimports += collect_submodules("silero_tts")
+hiddenimports += collect_submodules("coqui_tts")
+
+# Neural TTS runtimes. Model weights remain in their normal user caches and
+# are downloaded on first use.
+torch_datas, torch_binaries, torch_hiddenimports = collect_all("torch")
+datas += torch_datas
+binaries += torch_binaries
+hiddenimports += torch_hiddenimports
+
+torchaudio_datas, torchaudio_binaries, torchaudio_hiddenimports = collect_all("torchaudio")
+datas += torchaudio_datas
+binaries += torchaudio_binaries
+hiddenimports += torchaudio_hiddenimports
+
+coqui_datas, coqui_binaries, coqui_hiddenimports = collect_all("TTS")
+datas += coqui_datas
+binaries += coqui_binaries
+hiddenimports += coqui_hiddenimports
 
 # Native ru_tts backend is built by installer/build.py before PyInstaller.
 ru_tts_bin = RU_TTS_ROOT / "bin"
@@ -82,7 +107,14 @@ if ru_tts_bin.exists():
 
 a = Analysis(
     [str(ROOT / "main.py")],
-    pathex=[str(ROOT), str(SAM_ROOT), str(RU_TTS_ROOT)],
+    pathex=[
+        str(ROOT),
+        str(SAM_ROOT),
+        str(RU_TTS_ROOT),
+        str(DECTALK_ROOT),
+        str(SILERO_ROOT),
+        str(COQUI_ROOT),
+    ],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

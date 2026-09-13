@@ -11,6 +11,7 @@ from tts import synthesize_text
 SMOKE_CASES = (
     ("ru_tts", "Проверка синтеза речи"),
     ("sam", "Packaged speech test"),
+    ("dectalk", "DECtalk packaged speech test"),
 )
 
 
@@ -91,5 +92,5 @@ def run_packaged_smoke(tts_root: Path | None = None) -> int:
             if sample_rate <= 0 or len(samples) == 0:
                 raise RuntimeError(f"TTS smoke test produced empty audio for {model}")
 
-    print("V2TTS packaged smoke test passed: sherpa-onnx, ru_tts, sam")
+    print("V2TTS packaged smoke test passed: sherpa-onnx, ru_tts, sam, dectalk")
     return 0

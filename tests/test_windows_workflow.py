@@ -50,3 +50,29 @@ def test_windows_frozen_build_matches_supported_python_313() -> None:
     contents = workflow.read_text(encoding="utf-8")
 
     assert 'python-version: "3.13"' in contents
+
+
+def test_windows_build_installs_python_313_compatible_neural_tts() -> None:
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "coqui-tts[cpu]>=0.27,<0.28" in requirements
+    assert '"coqui-tts[cpu]>=0.27,<0.28"' in project
+
+
+def test_pyinstaller_collects_every_vendored_tts_engine() -> None:
+    spec = Path("installer/V2TTS.spec").read_text(encoding="utf-8")
+
+    for package in (
+        "sam_python",
+        "ru_tts_python",
+        "dectalk_python",
+        "silero_tts",
+        "coqui_tts",
+    ):
+        assert f'collect_submodules("{package}")' in spec
+    assert 'collect_all("torch")' in spec
+    assert 'collect_all("torchaudio")' in spec
+    assert 'collect_all("TTS")' in spec
+    assert '"torch",' not in spec
+    assert '"torchaudio",' not in spec
