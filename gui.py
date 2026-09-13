@@ -1,6 +1,6 @@
 import queue
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from stt_profiles import (
@@ -38,17 +38,19 @@ class AppGUI:
         on_refresh_devices: Callable[[], tuple[list[str], list[str]]],
         on_start: Callable[[dict], None],
         on_stop: Callable[[], None],
+        on_export_tts: Callable[[str, str, bool, str, str | None], None],
         on_worker_stopped: Callable[[], bool],
         is_run_current: Callable[[str], bool],
         initial_settings: dict | None = None,
     ):
         self.root = root
         self.root.title("V2TTS")
-        self.root.geometry("900x680")
+        self.root.geometry("900x780")
 
         self.on_refresh_devices = on_refresh_devices
         self.on_start = on_start
         self.on_stop = on_stop
+        self.on_export_tts = on_export_tts
         self.on_worker_stopped = on_worker_stopped
         self.is_run_current = is_run_current
 
@@ -98,6 +100,7 @@ class AppGUI:
         self.status_var = tk.StringVar(value="Idle")
         self.partial_var = tk.StringVar(value="")
         self.warning_var = tk.StringVar(value="")
+        self.export_status_var = tk.StringVar(value="")
         self._pipeline_state = "idle"
 
         self._stt_devices = stt_devices
@@ -115,6 +118,7 @@ class AppGUI:
         frame.pack(fill="both", expand=True)
 
         self._build_settings_frame(frame)
+        self._build_tts_export_frame(frame)
         self._build_buttons_frame(frame)
         self._build_status_frame(frame)
         self._toggle_tts_model_combo()
@@ -326,6 +330,27 @@ class AppGUI:
             pady=4,
         )
 
+    def _build_tts_export_frame(self, frame: ttk.Frame) -> None:
+        export = ttk.LabelFrame(frame, text="Text to WAV", padding=10)
+        export.pack(fill="x", pady=(10, 0))
+
+        self.tts_text = tk.Text(export, height=4, wrap="word")
+        self.tts_text.pack(fill="x")
+
+        controls = ttk.Frame(export)
+        controls.pack(fill="x", pady=(8, 0))
+        self.export_button = ttk.Button(
+            controls,
+            text="Save WAV...",
+            command=self.export_to_wav,
+        )
+        self.export_button.pack(side="left")
+        ttk.Label(
+            controls,
+            textvariable=self.export_status_var,
+            wraplength=700,
+        ).pack(side="left", padx=(10, 0))
+
     def _build_buttons_frame(self, frame: ttk.Frame) -> None:
         button_row = ttk.Frame(frame)
         button_row.pack(fill="x", pady=(10, 8))
@@ -514,6 +539,53 @@ class AppGUI:
     def stop(self) -> None:
         self.on_stop()
 
+    def export_to_wav(self) -> None:
+        text = self.tts_text.get("1.0", "end").strip()
+        if not text:
+            messagebox.showerror(
+                "TTS export",
+                "Enter text to synthesize.",
+            )
+            return
+
+        output_path = filedialog.asksaveasfilename(
+            title="Save synthesized WAV",
+            defaultextension=".wav",
+            filetypes=(
+                ("WAV audio", "*.wav"),
+                ("All files", "*.*"),
+            ),
+        )
+        if not output_path:
+            return
+
+        self.export_button.configure(state="disabled")
+        self.export_status_var.set("Synthesizing...")
+        try:
+            self.on_export_tts(
+                text,
+                output_path,
+                self.auto_tts_var.get(),
+                self.tts_model_var.get(),
+                self.tts_root_var.get().strip() or None,
+            )
+        except Exception as exc:
+            self.export_button.configure(state="normal")
+            self.export_status_var.set("Export failed")
+            self._append_log(f"ERROR: {exc}\n")
+            messagebox.showerror("TTS export error", str(exc))
+
+    def warn_export_in_progress(self) -> None:
+        messagebox.showwarning(
+            "TTS export in progress",
+            "Wait for the WAV export to finish before closing V2TTS.",
+        )
+
+    def set_export_enabled(self, enabled: bool) -> None:
+        self.export_button.configure(
+            state="normal" if enabled else "disabled"
+        )
+
     def enqueue_event(
         self,
         kind: str,
@@ -552,6 +624,15 @@ class AppGUI:
                     self._append_log(f"STT: {message}\n")
                 elif kind == "partial":
                     self.partial_var.set(message)
+                elif kind == "tts_export_done":
+                    self.export_button.configure(state="normal")
+                    self.export_status_var.set(message)
+                    self._append_log(f"TTS: {message}\n")
+                elif kind == "tts_export_error":
+                    self.export_button.configure(state="normal")
+                    self.export_status_var.set("Export failed")
+                    self._append_log(f"ERROR: {message}\n")
+                    messagebox.showerror("TTS export error", message)
                 elif kind == "worker_stopped":
                     if self.on_worker_stopped():
                         return

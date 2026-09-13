@@ -1,6 +1,10 @@
 import importlib
 import multiprocessing
+import os
+from pathlib import Path
 import sys
+import tempfile
+import threading
 import tkinter as tk
 
 from app_settings import load_app_settings, save_app_settings
@@ -16,7 +20,7 @@ from stt_profiles import (
     validate_selection,
     validate_streaming_selection,
 )
-from tts import TTS_MODELS, prepare_runtime_tts_root
+from tts import TTS_MODELS, prepare_runtime_tts_root, synthesize_text
 
 
 RUNTIME_DEPENDENCIES = (
@@ -53,6 +57,7 @@ class AppController:
         self.input_map: dict[str, int] = {}
         self.output_map: dict[str, int] = {}
         self._closing = False
+        self._tts_export_thread: threading.Thread | None = None
 
         runtime_tts_root = prepare_runtime_tts_root()
         initial_settings = load_app_settings()
@@ -66,6 +71,7 @@ class AppController:
             on_refresh_devices=self.refresh_devices,
             on_start=self.start,
             on_stop=self.stop,
+            on_export_tts=self.export_tts,
             on_worker_stopped=self._runner_stopped,
             is_run_current=self._is_run_current,
             initial_settings=initial_settings,
@@ -161,6 +167,74 @@ class AppController:
             self.gui.set_pipeline_state("stopping")
             self.runner.stop()
 
+    def export_tts(
+        self,
+        text: str,
+        output_path: str,
+        auto_select: bool,
+        manual_model: str,
+        tts_root: str | None,
+    ) -> None:
+        if getattr(self, "_closing", False):
+            raise RuntimeError("V2TTS is closing; a new export cannot start.")
+        if self._tts_export_thread and self._tts_export_thread.is_alive():
+            raise RuntimeError("A TTS export is already running.")
+
+        self._tts_export_thread = threading.Thread(
+            target=self._export_tts_worker,
+            args=(
+                text,
+                output_path,
+                auto_select,
+                manual_model,
+                tts_root,
+            ),
+            daemon=True,
+            name="V2TTS-file-export",
+        )
+        self._tts_export_thread.start()
+
+    def _export_tts_worker(
+        self,
+        text: str,
+        output_path: str,
+        auto_select: bool,
+        manual_model: str,
+        tts_root: str | None,
+    ) -> None:
+        destination = Path(output_path)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".tmp.wav",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+            engine = synthesize_text(
+                text=text,
+                out_wav=str(temporary_path),
+                auto_select=auto_select,
+                manual_model=manual_model,
+                tts_root=tts_root,
+            )
+            os.replace(temporary_path, destination)
+            temporary_path = None
+        except Exception as exc:
+            self.gui.enqueue_event(
+                "tts_export_error",
+                f"TTS export failed: {exc}",
+            )
+        else:
+            self.gui.enqueue_event(
+                "tts_export_done",
+                f"Saved WAV with {engine}: {output_path}",
+            )
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
     def _is_run_current(self, run_id: str) -> bool:
         return bool(self.runner and self.runner.accepts_events_from(run_id))
 
@@ -174,7 +248,12 @@ class AppController:
             return False
 
     def close(self) -> None:
+        export_thread = getattr(self, "_tts_export_thread", None)
+        if export_thread and export_thread.is_alive():
+            self.gui.warn_export_in_progress()
+            return
         self._closing = True
+        self.gui.set_export_enabled(False)
         if self.runner and self.runner.is_running():
             self.stop()
             return

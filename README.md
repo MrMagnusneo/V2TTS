@@ -26,6 +26,8 @@ Desktop GUI app for a real-time `speech -> text -> speech` loop.
 - Manual TTS engine selection: `ru_tts`, `sam`, `dectalk`, `silero`, or `coqui`.
   Automatic selection intentionally remains `ru_tts` for Cyrillic and `sam`
   for Latin text.
+- Enter arbitrary text in `Text to WAV` and save the synthesized speech as a
+  WAV file with the current automatic or manual TTS settings.
 
 ### Project Structure
 
@@ -108,6 +110,11 @@ python -m pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+To create an audio file without using the microphone, enter text in the
+`Text to WAV` field, click `Save WAV...`, and choose an output path. Synthesis
+runs in the background and its result is shown next to the button and in the
+application log.
 
 The first use of a selected STT model downloads its weights. The streaming
 Russian archive is 128,468,156 bytes and the English archive is 127,887,156
@@ -231,6 +238,8 @@ python -m pytest tests/integration/test_streaming_model_smoke.py -q
 - Ручной выбор TTS: `ru_tts`, `sam`, `dectalk`, `silero` или `coqui`.
   Автовыбор намеренно остаётся прежним: `ru_tts` для кириллицы и `sam` для
   латиницы.
+- В поле `Text to WAV` можно ввести произвольный текст и сохранить результат
+  озвучивания в WAV с текущими автоматическими или ручными настройками TTS.
 
 ### Структура Проекта
 
@@ -313,6 +322,10 @@ python -m pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+Чтобы создать аудиофайл без микрофона, введи текст в поле `Text to WAV`, нажми
+`Save WAV...` и выбери путь сохранения. Синтез выполняется в фоне, а результат
+показывается рядом с кнопкой и в журнале приложения.
 
 При первом выборе STT-модели её веса скачиваются автоматически. Архив русской
 потоковой модели занимает 128 468 156 байт, английской — 127 887 156 байт.
